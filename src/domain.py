@@ -90,8 +90,10 @@ class Event:
 @dataclass(frozen=True)
 class CommitRecord:
     root: bytes
+    root_signature: bytes
     event_ids: Tuple[int, ...]
     commit_time: float
+    signature_time: float
     proof_sizes: Tuple[int, ...]
 
 
@@ -107,6 +109,10 @@ class RunMetrics:
     lost_events: int
     avg_proof_hashes: float
     avg_proof_bytes: float
+    signature_count: int
+    avg_signature_time: float
+    total_signature_time: float
+    signature_time_per_second: float
 
 
 @dataclass(frozen=True)

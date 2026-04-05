@@ -5,6 +5,10 @@ import hashlib
 import hmac
 from typing import List, Sequence, Tuple
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+
 
 def _sha256(payload: bytes) -> bytes:
     return hashlib.sha256(payload).digest()
@@ -12,6 +16,29 @@ def _sha256(payload: bytes) -> bytes:
 
 def compute_event_hmac(secret: bytes, payload: bytes) -> bytes:
     return hmac.new(secret, payload, hashlib.sha256).digest()
+
+
+@dataclass(frozen=True)
+class ECDSARootSigner:
+    private_key: ec.EllipticCurvePrivateKey
+    public_key: ec.EllipticCurvePublicKey
+
+
+def create_ecdsa_signer() -> ECDSARootSigner:
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    return ECDSARootSigner(private_key=private_key, public_key=private_key.public_key())
+
+
+def sign_root_ecdsa(private_key: ec.EllipticCurvePrivateKey, root: bytes) -> bytes:
+    return private_key.sign(root, ec.ECDSA(hashes.SHA256()))
+
+
+def verify_root_signature(public_key: ec.EllipticCurvePublicKey, root: bytes, signature: bytes) -> bool:
+    try:
+        public_key.verify(signature, root, ec.ECDSA(hashes.SHA256()))
+    except InvalidSignature:
+        return False
+    return True
 
 
 @dataclass(frozen=True)

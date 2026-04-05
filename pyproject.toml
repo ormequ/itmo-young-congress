@@ -3,6 +3,9 @@ name = "itmo-young-congress"
 version = "0.1.0"
 description = "Adaptive Merkle epoch simulator for ITMO Young Congress thesis"
 requires-python = ">=3.9"
+dependencies = [
+  "cryptography>=42.0.0",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]

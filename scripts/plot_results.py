@@ -424,7 +424,7 @@ def build_presentation_plots(
     # 3. Stress summary table.
     fig, ax = plt.subplots(figsize=(12.5, 3.8))
     ax.axis("off")
-    headers = ["Политика", "Статус", "Safe throughput", "Max окно", "Частота фиксаций"]
+    headers = ["Политика", "Статус", "Safe throughput", "Max окно", "Частота фиксаций", "Крипто-время/с"]
     body = []
     for policy in POLICY_ORDER:
         row = stress_summary.get(policy, {})
@@ -432,10 +432,11 @@ def build_presentation_plots(
         body.append(
             [
                 POLICY_LABELS[policy],
-                "Проходит SLA" if is_safe else "SLA fail",
-                f"{row.get('safe_throughput', 0.0):.2f}",
-                f"{row.get('max_vulnerability_window', 0.0):.2f}",
-                f"{row.get('commit_frequency_at_safe_throughput', 0.0):.2f}",
+                "Проходит ограничения" if is_safe else "Не проходит ограничения",
+                f"{row.get('safe_throughput', 0.0):.2f}" if is_safe else "—",
+                f"{row.get('max_vulnerability_window', 0.0):.2f}" if is_safe else "—",
+                f"{row.get('commit_frequency_at_safe_throughput', 0.0):.2f}" if is_safe else "—",
+                f"{row.get('signature_time_per_second_at_safe_throughput', 0.0):.2f}" if is_safe else "—",
             ]
         )
     table = ax.table(cellText=body, colLabels=headers, loc="center", cellLoc="center", colLoc="center")
@@ -448,13 +449,13 @@ def build_presentation_plots(
             cell.set_text_props(weight="bold")
         elif row_index == 1:
             cell.set_facecolor("#d9edf7")
-        elif body[row_index - 1][1] == "SLA fail":
+        elif body[row_index - 1][1] == "Не проходит ограничения":
             cell.set_facecolor("#f8d7da")
         else:
             cell.set_facecolor("#f8f9fa")
         cell.set_edgecolor("#c7cdd6")
     ax.set_title(
-        "Stress-тест: максимальный поток при ограничениях max window <= 5.0 c и queue <= 90% capacity",
+        "Stress-тест: max window <= 5.0 c, queue <= 90% capacity, commit frequency <= 2.0",
         fontsize=16,
         pad=18,
     )

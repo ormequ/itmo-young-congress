@@ -14,6 +14,8 @@ from simulator import run_simulation, simulation_to_json
 DEFAULT_DEMO_STRESS_WINDOW_LIMIT = 5.0
 # Default SLA for demo stress runs: allowed queue occupancy as a capacity fraction.
 DEFAULT_DEMO_STRESS_QUEUE_FILL_LIMIT = 0.9
+# Default stress limit: maximum acceptable commit frequency under safe throughput.
+DEFAULT_DEMO_STRESS_COMMIT_FREQUENCY_LIMIT = 2.0
 
 
 def _cmd_run_scenario(args: argparse.Namespace) -> int:
@@ -48,6 +50,7 @@ def _cmd_stress_test(args: argparse.Namespace) -> int:
         seeds=seeds,
         window_limit=args.window_limit or DEFAULT_DEMO_STRESS_WINDOW_LIMIT,
         queue_fill_limit=args.queue_fill_limit or DEFAULT_DEMO_STRESS_QUEUE_FILL_LIMIT,
+        commit_frequency_limit=args.commit_frequency_limit or DEFAULT_DEMO_STRESS_COMMIT_FREQUENCY_LIMIT,
     )
     write_json(Path(args.output_dir) / "stress_summary.json", summary)
     return 0
@@ -113,6 +116,8 @@ def register_demo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
     stress_parser.add_argument("--window-limit", type=float)
     # Optional SLA limit for queue occupancy, expressed as a capacity fraction.
     stress_parser.add_argument("--queue-fill-limit", type=float)
+    # Optional limit for commit frequency; aggressive policies above it are rejected.
+    stress_parser.add_argument("--commit-frequency-limit", type=float)
     # Directory where the stress summary JSON will be written.
     stress_parser.add_argument("--output-dir", required=True)
     stress_parser.set_defaults(handler=_cmd_stress_test)

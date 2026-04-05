@@ -4,9 +4,10 @@ from dataclasses import asdict
 import json
 import random
 import statistics
+import time
 from typing import List, Optional, Sequence
 
-from crypto import build_merkle_tree
+from crypto import ECDSARootSigner, build_merkle_tree, create_ecdsa_signer, sign_root_ecdsa
 from domain import (
     CommitRecord,
     EpochState,
@@ -96,8 +97,16 @@ def run_simulation(
     policy: object,
     seed: int = 1,
     events: Optional[Sequence[Event]] = None,
+    signer: Optional[ECDSARootSigner] = None,
 ) -> SimulationResult:
-    result, _ = _run_simulation_internal(scenario, policy, seed=seed, events=events, collect_trace=False)
+    result, _ = _run_simulation_internal(
+        scenario,
+        policy,
+        seed=seed,
+        events=events,
+        collect_trace=False,
+        signer=signer,
+    )
     return result
 
 
@@ -106,8 +115,16 @@ def run_simulation_trace(
     policy: object,
     seed: int = 1,
     events: Optional[Sequence[Event]] = None,
+    signer: Optional[ECDSARootSigner] = None,
 ) -> list[dict]:
-    _, trace = _run_simulation_internal(scenario, policy, seed=seed, events=events, collect_trace=True)
+    _, trace = _run_simulation_internal(
+        scenario,
+        policy,
+        seed=seed,
+        events=events,
+        collect_trace=True,
+        signer=signer,
+    )
     return trace
 
 
@@ -117,12 +134,15 @@ def _run_simulation_internal(
     seed: int = 1,
     events: Optional[Sequence[Event]] = None,
     collect_trace: bool = False,
+    signer: Optional[ECDSARootSigner] = None,
 ) -> tuple[SimulationResult, list[dict]]:
     event_stream = list(events) if events is not None else generate_events(scenario, seed)
+    root_signer = signer or create_ecdsa_signer()
     epoch_events: List[Event] = []
     commits: List[CommitRecord] = []
     vulnerability_windows: List[float] = []
     queue_depths: List[int] = []
+    signature_times: List[float] = []
     ack_history: List[float] = []
     cpu_history: List[float] = []
     queue_history: List[float] = []
@@ -137,15 +157,22 @@ def _run_simulation_internal(
             return
 
         tree = build_merkle_tree([event.payload for event in epoch_events])
-        commit_time = commit_reference_time + max(event.ack_latency for event in epoch_events)
+        signature_started = time.perf_counter()
+        root_signature = sign_root_ecdsa(root_signer.private_key, tree.root)
+        measured_signature_time = time.perf_counter() - signature_started
+        effective_signature_time = max(measured_signature_time, 0.05)
+        signature_times.append(effective_signature_time)
+        commit_time = commit_reference_time + max(event.ack_latency for event in epoch_events) + effective_signature_time
         proof_sizes = tuple(len(tree.proof_for(index)) for index, _ in enumerate(epoch_events))
         for event in epoch_events:
             vulnerability_windows.append(commit_time - event.arrival_time)
         commits.append(
             CommitRecord(
                 root=tree.root,
+                root_signature=root_signature,
                 event_ids=tuple(event.event_id for event in epoch_events),
                 commit_time=commit_time,
+                signature_time=effective_signature_time,
                 proof_sizes=proof_sizes,
             )
         )
@@ -222,6 +249,8 @@ def _run_simulation_internal(
     avg_proof_hashes = (
         statistics.mean(size for commit in commits for size in commit.proof_sizes) if commits else 0.0
     )
+    total_signature_time = sum(signature_times)
+    avg_signature_time = statistics.mean(signature_times) if signature_times else 0.0
     metrics = RunMetrics(
         avg_vulnerability_window=avg_window,
         p95_vulnerability_window=_p95(vulnerability_windows),
@@ -233,6 +262,10 @@ def _run_simulation_internal(
         lost_events=max(0, len([depth for depth in queue_depths if depth > scenario.queue_capacity])),
         avg_proof_hashes=avg_proof_hashes,
         avg_proof_bytes=avg_proof_hashes * 32.0,
+        signature_count=len(signature_times),
+        avg_signature_time=avg_signature_time,
+        total_signature_time=total_signature_time,
+        signature_time_per_second=total_signature_time / max(scenario.duration, 1e-9),
     )
     return (
         SimulationResult(
@@ -254,6 +287,8 @@ def simulation_to_json(result: SimulationResult) -> str:
             {
                 "event_ids": commit.event_ids,
                 "commit_time": commit.commit_time,
+                "root_signature": commit.root_signature.hex(),
+                "signature_time": commit.signature_time,
                 "proof_sizes": commit.proof_sizes,
             }
             for commit in result.commits

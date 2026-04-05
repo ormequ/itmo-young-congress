@@ -49,6 +49,7 @@ class StressTests(unittest.TestCase):
             seeds=[1, 2, 3],
             window_limit=5.0,
             queue_fill_limit=0.9,
+            commit_frequency_limit=2.0,
         )
 
         self.assertIn("adaptive", summary)
@@ -57,6 +58,8 @@ class StressTests(unittest.TestCase):
         self.assertIn("fixed-large", summary)
         self.assertIn("safe_throughput", summary["adaptive"])
         self.assertIn("commit_frequency_at_safe_throughput", summary["fixed-small"])
+        self.assertIn("passes_constraints", summary["fixed-large"])
+        self.assertIn("signature_time_per_second_at_safe_throughput", summary["adaptive"])
 
     def test_cli_stress_test_command_writes_summary(self) -> None:
         payload = {
@@ -88,6 +91,8 @@ class StressTests(unittest.TestCase):
                     "5.0",
                     "--queue-fill-limit",
                     "0.9",
+                    "--commit-frequency-limit",
+                    "2.0",
                     "--output-dir",
                     str(tmp / "stress"),
                 ]

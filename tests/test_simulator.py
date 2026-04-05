@@ -1,6 +1,7 @@
 import unittest
 
 from domain import ArrivalSegment, Event, ScenarioConfig
+from crypto import create_ecdsa_signer, verify_root_signature
 from policies import AdaptiveEpochPolicy, FixedEpochPolicy
 from simulator import generate_events, run_simulation, run_simulation_trace
 
@@ -67,6 +68,33 @@ class SimulatorTests(unittest.TestCase):
 
         self.assertAlmostEqual(result.metrics.avg_vulnerability_window, 2.1, places=1)
         self.assertAlmostEqual(result.metrics.max_vulnerability_window, 2.2, places=1)
+
+    def test_closed_epoch_contains_root_signature_metrics(self) -> None:
+        scenario = ScenarioConfig(
+            name="signed-root",
+            duration=1.0,
+            queue_capacity=20,
+            target_window=1.0,
+            segments=(ArrivalSegment(duration=1.0, rate=3.0, ack_latency=1.0),),
+        )
+        events = [
+            Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 3.0),
+            Event(2, 0.2, b"b", 1.0, 0.2, 0.1, False, 3.0),
+        ]
+        signer = create_ecdsa_signer()
+
+        result = run_simulation(scenario, FixedEpochPolicy(epoch_size=2), events=events, signer=signer)
+
+        self.assertEqual(result.metrics.signature_count, 1)
+        self.assertGreater(result.metrics.avg_signature_time, 0.0)
+        self.assertGreater(result.metrics.total_signature_time, 0.0)
+        self.assertTrue(
+            verify_root_signature(
+                signer.public_key,
+                result.commits[0].root,
+                result.commits[0].root_signature,
+            )
+        )
 
     def test_adaptive_policy_closes_early_for_critical_event(self) -> None:
         scenario = ScenarioConfig(

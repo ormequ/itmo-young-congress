@@ -3,6 +3,9 @@ import unittest
 from crypto import (
     build_merkle_tree,
     compute_event_hmac,
+    create_ecdsa_signer,
+    sign_root_ecdsa,
+    verify_root_signature,
     verify_merkle_proof,
 )
 
@@ -34,6 +37,14 @@ class CryptoTests(unittest.TestCase):
         tree = build_merkle_tree([b"alpha", b"beta", b"gamma"])
 
         self.assertFalse(verify_merkle_proof(b"evil", tree.proof_for(1), tree.root))
+
+    def test_ecdsa_signature_validates_merkle_root(self) -> None:
+        signer = create_ecdsa_signer()
+        tree = build_merkle_tree([b"alpha", b"beta", b"gamma"])
+
+        signature = sign_root_ecdsa(signer.private_key, tree.root)
+
+        self.assertTrue(verify_root_signature(signer.public_key, tree.root, signature))
 
 
 if __name__ == "__main__":

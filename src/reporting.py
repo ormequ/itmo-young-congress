@@ -33,6 +33,7 @@ def run_batch(
                         "max_queue_depth": result.metrics.max_queue_depth,
                         "throughput": result.metrics.throughput,
                         "avg_proof_bytes": result.metrics.avg_proof_bytes,
+                        "signature_time_per_second": result.metrics.signature_time_per_second,
                     }
                 )
 
@@ -59,6 +60,7 @@ def _aggregate(rows: Sequence[dict]) -> List[dict]:
                 "max_queue_depth": max(item["max_queue_depth"] for item in group),
                 "throughput": sum(item["throughput"] for item in group) / count,
                 "avg_proof_bytes": sum(item["avg_proof_bytes"] for item in group) / count,
+                "signature_time_per_second": sum(item["signature_time_per_second"] for item in group) / count,
             }
         )
     summary.sort(key=lambda item: (item["scenario"], item["policy"]))
@@ -78,13 +80,14 @@ def build_report(summary_path: Path, report_dir: Path) -> Path:
 
     md_path = report_dir / "summary.md"
     md_lines = [
-        "| scenario | policy | avg_window | max_window | commit_frequency | max_queue_depth | throughput | avg_proof_bytes |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| scenario | policy | avg_window | max_window | commit_frequency | max_queue_depth | throughput | avg_proof_bytes | signature_time_per_second |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary:
         md_lines.append(
             "| {scenario} | {policy} | {avg_vulnerability_window:.3f} | {max_vulnerability_window:.3f} | "
-            "{commit_frequency:.3f} | {max_queue_depth} | {throughput:.3f} | {avg_proof_bytes:.1f} |".format(
+            "{commit_frequency:.3f} | {max_queue_depth} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
+            "{signature_time_per_second:.3f} |".format(
                 **row
             )
         )
@@ -144,6 +147,7 @@ def run_stress_test(
     seeds: Sequence[int],
     window_limit: float,
     queue_fill_limit: float,
+    commit_frequency_limit: float = float("inf"),
 ) -> Dict[str, dict]:
     policies = make_policies(scenario)
     summary: Dict[str, dict] = {}
@@ -159,6 +163,8 @@ def run_stress_test(
             "commit_frequency_at_safe_throughput": 0.0,
             "max_queue_depth_at_safe_throughput": 0.0,
             "avg_proof_bytes_at_safe_throughput": 0.0,
+            "signature_time_per_second_at_safe_throughput": 0.0,
+            "passes_constraints": False,
         }
 
         for rate in sorted(arrival_rates):
@@ -169,7 +175,14 @@ def run_stress_test(
             commit_frequency = sum(result.metrics.commit_frequency for result in results) / len(results)
             max_queue_depth = max(result.metrics.max_queue_depth for result in results)
             avg_proof_bytes = sum(result.metrics.avg_proof_bytes for result in results) / len(results)
-            is_safe = max_window <= window_limit and max_queue_depth <= queue_limit
+            signature_time_per_second = (
+                sum(result.metrics.signature_time_per_second for result in results) / len(results)
+            )
+            is_safe = (
+                max_window <= window_limit
+                and max_queue_depth <= queue_limit
+                and commit_frequency <= commit_frequency_limit
+            )
             if is_safe:
                 safe_rate = rate
                 safe_metrics = {
@@ -178,6 +191,8 @@ def run_stress_test(
                     "commit_frequency_at_safe_throughput": commit_frequency,
                     "max_queue_depth_at_safe_throughput": max_queue_depth,
                     "avg_proof_bytes_at_safe_throughput": avg_proof_bytes,
+                    "signature_time_per_second_at_safe_throughput": signature_time_per_second,
+                    "passes_constraints": True,
                 }
             else:
                 break
