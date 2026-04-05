@@ -111,3 +111,81 @@ def build_report(summary_path: Path, report_dir: Path) -> Path:
     svg_path.write_text("\n".join(lines), encoding="utf-8")
 
     return report_dir
+
+
+def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig:
+    segments = tuple(
+        type(segment)(
+            duration=segment.duration,
+            rate=rate,
+            ack_latency=segment.ack_latency,
+            cpu_load=segment.cpu_load,
+            queue_fill=segment.queue_fill,
+            critical_every=segment.critical_every,
+        )
+        for segment in scenario.segments
+    )
+    return ScenarioConfig(
+        name=f"{scenario.name}-stress-{rate:g}",
+        duration=scenario.duration,
+        queue_capacity=scenario.queue_capacity,
+        target_window=scenario.target_window,
+        segments=segments,
+        telemetry_window_size=scenario.telemetry_window_size,
+        anomaly_sigma_threshold=scenario.anomaly_sigma_threshold,
+        criticality_threshold=scenario.criticality_threshold,
+    )
+
+
+def run_stress_test(
+    scenario: ScenarioConfig,
+    arrival_rates: Sequence[float],
+    seeds: Sequence[int],
+    window_limit: float,
+    queue_fill_limit: float,
+) -> Dict[str, dict]:
+    from itmo_young_congress.cli import make_policies
+
+    policies = make_policies(scenario)
+    summary: Dict[str, dict] = {}
+    queue_limit = scenario.queue_capacity * queue_fill_limit
+
+    for policy_name, policy in policies.items():
+        if policy_name.startswith("adaptive-no-"):
+            continue
+        safe_rate = 0.0
+        safe_metrics = {
+            "avg_vulnerability_window": 0.0,
+            "max_vulnerability_window": 0.0,
+            "commit_frequency_at_safe_throughput": 0.0,
+            "max_queue_depth_at_safe_throughput": 0.0,
+            "avg_proof_bytes_at_safe_throughput": 0.0,
+        }
+
+        for rate in sorted(arrival_rates):
+            stress_scenario = _scenario_with_rate(scenario, rate)
+            results = [run_simulation(stress_scenario, policy, seed=seed) for seed in seeds]
+            avg_window = sum(result.metrics.avg_vulnerability_window for result in results) / len(results)
+            max_window = max(result.metrics.max_vulnerability_window for result in results)
+            commit_frequency = sum(result.metrics.commit_frequency for result in results) / len(results)
+            max_queue_depth = max(result.metrics.max_queue_depth for result in results)
+            avg_proof_bytes = sum(result.metrics.avg_proof_bytes for result in results) / len(results)
+            is_safe = max_window <= window_limit and max_queue_depth <= queue_limit
+            if is_safe:
+                safe_rate = rate
+                safe_metrics = {
+                    "avg_vulnerability_window": avg_window,
+                    "max_vulnerability_window": max_window,
+                    "commit_frequency_at_safe_throughput": commit_frequency,
+                    "max_queue_depth_at_safe_throughput": max_queue_depth,
+                    "avg_proof_bytes_at_safe_throughput": avg_proof_bytes,
+                }
+            else:
+                break
+
+        summary[policy_name] = {
+            "safe_throughput": safe_rate,
+            **safe_metrics,
+        }
+
+    return summary

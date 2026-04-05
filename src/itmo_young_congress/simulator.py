@@ -4,11 +4,10 @@ from dataclasses import asdict
 import json
 import random
 import statistics
-from typing import Iterable, List, Optional, Sequence
+from typing import List, Optional, Sequence
 
 from itmo_young_congress.crypto import build_merkle_tree
 from itmo_young_congress.domain import (
-    ArrivalSegment,
     CommitRecord,
     EpochState,
     Event,
@@ -17,15 +16,6 @@ from itmo_young_congress.domain import (
     SimulationResult,
     TelemetrySample,
 )
-
-
-def _segment_at(scenario: ScenarioConfig, moment: float) -> ArrivalSegment:
-    cursor = 0.0
-    for segment in scenario.segments:
-        cursor += segment.duration
-        if moment <= cursor + 1e-9:
-            return segment
-    return scenario.segments[-1]
 
 
 def generate_events(scenario: ScenarioConfig, seed: int) -> List[Event]:
@@ -52,6 +42,8 @@ def generate_events(scenario: ScenarioConfig, seed: int) -> List[Event]:
                     queue_fill=segment.queue_fill,
                     critical=critical,
                     arrival_rate=segment.rate,
+                    data_value=segment.rate,
+                    data_criticality=1.0 if critical else 0.1,
                 )
             )
             event_id += 1
@@ -70,6 +62,24 @@ def _p95(values: Sequence[float]) -> float:
     return float(ordered[index])
 
 
+def _mean_std(values: Sequence[float]) -> tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    mean = float(statistics.mean(values))
+    if len(values) == 1:
+        return mean, 0.0
+    return mean, float(statistics.pstdev(values))
+
+
+def _is_anomalous(value: float, history: Sequence[float], sigma_threshold: float) -> bool:
+    if len(history) < 2:
+        return False
+    mean, std = _mean_std(history)
+    if std < 1e-9:
+        return abs(value - mean) > 0.0
+    return abs(value - mean) > sigma_threshold * std
+
+
 def _policy_name(policy: object) -> str:
     name = policy.__class__.__name__
     return name.replace("EpochPolicy", "").replace("Policy", "").lower()
@@ -86,11 +96,15 @@ def run_simulation(
     commits: List[CommitRecord] = []
     vulnerability_windows: List[float] = []
     queue_depths: List[int] = []
+    ack_history: List[float] = []
+    cpu_history: List[float] = []
+    queue_history: List[float] = []
+    data_history: List[float] = []
 
     current_target = getattr(policy, "fixed_target", max(1, round(scenario.target_window)))
 
     def close_epoch(commit_reference_time: float) -> None:
-        nonlocal epoch_events, current_target
+        nonlocal epoch_events
         if not epoch_events:
             return
 
@@ -112,18 +126,50 @@ def run_simulation(
     for event in event_stream:
         epoch_events.append(event)
         queue_depths.append(len(epoch_events))
+        rolling_queue_fill = max(event.queue_fill, len(epoch_events) / max(1, scenario.queue_capacity))
+        ack_window = ack_history[-scenario.telemetry_window_size :]
+        cpu_window = cpu_history[-scenario.telemetry_window_size :]
+        queue_window = queue_history[-scenario.telemetry_window_size :]
+        data_window = data_history[-scenario.telemetry_window_size :]
+        rolling_ack_mean, rolling_ack_std = _mean_std(ack_window)
+        rolling_cpu_mean, rolling_cpu_std = _mean_std(cpu_window)
+        rolling_queue_mean, rolling_queue_std = _mean_std(queue_window)
+        rolling_data_mean, rolling_data_std = _mean_std(data_window)
+
         telemetry = TelemetrySample(
             arrival_rate=event.arrival_rate,
             ack_latency=event.ack_latency,
             cpu_load=event.cpu_load,
-            queue_fill=max(event.queue_fill, len(epoch_events) / max(1, scenario.queue_capacity)),
+            queue_fill=rolling_queue_fill,
             critical_event=event.critical,
+            rolling_ack_mean=rolling_ack_mean,
+            rolling_ack_std=rolling_ack_std,
+            rolling_cpu_mean=rolling_cpu_mean,
+            rolling_cpu_std=rolling_cpu_std,
+            rolling_queue_mean=rolling_queue_mean,
+            rolling_queue_std=rolling_queue_std,
+            rolling_data_mean=rolling_data_mean,
+            rolling_data_std=rolling_data_std,
+            anomaly_detected=any(
+                (
+                    _is_anomalous(event.ack_latency, ack_window, scenario.anomaly_sigma_threshold),
+                    _is_anomalous(event.cpu_load, cpu_window, scenario.anomaly_sigma_threshold),
+                    _is_anomalous(rolling_queue_fill, queue_window, scenario.anomaly_sigma_threshold),
+                    _is_anomalous(event.data_value, data_window, scenario.anomaly_sigma_threshold),
+                )
+            ),
+            data_criticality=event.data_criticality,
         )
         state = EpochState(event_count=len(epoch_events), current_target=current_target)
         decision = policy.evaluate(state, telemetry)
         current_target = decision.next_target
         if decision.should_close:
             close_epoch(event.arrival_time)
+
+        ack_history.append(event.ack_latency)
+        cpu_history.append(event.cpu_load)
+        queue_history.append(rolling_queue_fill)
+        data_history.append(event.data_value)
 
     if epoch_events:
         tail_time = event_stream[-1].arrival_time if event_stream else scenario.duration

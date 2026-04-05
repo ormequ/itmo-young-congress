@@ -10,7 +10,7 @@ from itmo_young_congress.crypto import verify_merkle_proof
 from itmo_young_congress.demo import run_demo_gateway
 from itmo_young_congress.domain import ArrivalSegment, ScenarioConfig
 from itmo_young_congress.policies import AdaptiveEpochPolicy, FixedEpochPolicy
-from itmo_young_congress.reporting import build_report, run_batch
+from itmo_young_congress.reporting import build_report, run_batch, run_stress_test
 from itmo_young_congress.simulator import run_simulation, simulation_to_json
 
 
@@ -23,6 +23,9 @@ def load_scenario(path: Path) -> ScenarioConfig:
         queue_capacity=payload["queue_capacity"],
         target_window=payload["target_window"],
         segments=segments,
+        telemetry_window_size=payload.get("telemetry_window_size", 5),
+        anomaly_sigma_threshold=payload.get("anomaly_sigma_threshold", 3.0),
+        criticality_threshold=payload.get("criticality_threshold", 0.9),
     )
 
 
@@ -73,6 +76,22 @@ def _cmd_run_batch(args: argparse.Namespace) -> int:
 
 def _cmd_build_report(args: argparse.Namespace) -> int:
     build_report(Path(args.summary), Path(args.output_dir))
+    return 0
+
+
+def _cmd_stress_test(args: argparse.Namespace) -> int:
+    scenario = load_scenario(Path(args.config))
+    arrival_rates = [float(item) for item in args.arrival_rates.split(",") if item]
+    seeds = [int(item) for item in args.seeds.split(",") if item]
+    output_dir = Path(args.output_dir)
+    summary = run_stress_test(
+        scenario=scenario,
+        arrival_rates=arrival_rates,
+        seeds=seeds,
+        window_limit=args.window_limit,
+        queue_fill_limit=args.queue_fill_limit,
+    )
+    _write_json(output_dir / "stress_summary.json", summary)
     return 0
 
 
@@ -129,6 +148,15 @@ def build_parser() -> argparse.ArgumentParser:
     build_report_parser.add_argument("--summary", required=True)
     build_report_parser.add_argument("--output-dir", required=True)
     build_report_parser.set_defaults(handler=_cmd_build_report)
+
+    stress_parser = subparsers.add_parser("stress-test")
+    stress_parser.add_argument("--config", required=True)
+    stress_parser.add_argument("--arrival-rates", required=True)
+    stress_parser.add_argument("--seeds", required=True)
+    stress_parser.add_argument("--window-limit", type=float, required=True)
+    stress_parser.add_argument("--queue-fill-limit", type=float, required=True)
+    stress_parser.add_argument("--output-dir", required=True)
+    stress_parser.set_defaults(handler=_cmd_stress_test)
 
     verify_parser = subparsers.add_parser("verify-proof")
     verify_parser.add_argument("--input", required=True)

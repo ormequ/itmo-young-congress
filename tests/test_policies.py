@@ -89,6 +89,48 @@ class AdaptivePolicyTests(unittest.TestCase):
 
         self.assertTrue(decision.should_close)
 
+    def test_closes_epoch_on_rolling_anomaly(self) -> None:
+        policy = AdaptiveEpochPolicy(
+            target_window=2.0,
+            min_epoch=2,
+            max_epoch=20,
+            ema_alpha=0.2,
+            change_threshold=0.1,
+            ack_target=1.0,
+        )
+        state = EpochState(event_count=4, current_target=10)
+
+        decision = policy.evaluate(
+            state,
+            TelemetrySample(
+                arrival_rate=8.0,
+                ack_latency=1.1,
+                rolling_ack_mean=1.0,
+                rolling_ack_std=0.02,
+                anomaly_detected=True,
+            ),
+        )
+
+        self.assertTrue(decision.should_close)
+
+    def test_closes_epoch_on_high_data_criticality(self) -> None:
+        policy = AdaptiveEpochPolicy(
+            target_window=2.0,
+            min_epoch=2,
+            max_epoch=20,
+            ema_alpha=0.2,
+            change_threshold=0.1,
+            ack_target=1.0,
+        )
+        state = EpochState(event_count=2, current_target=8)
+
+        decision = policy.evaluate(
+            state,
+            TelemetrySample(arrival_rate=8.0, data_criticality=0.95),
+        )
+
+        self.assertTrue(decision.should_close)
+
 
 if __name__ == "__main__":
     unittest.main()

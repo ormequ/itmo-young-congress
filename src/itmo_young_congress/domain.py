@@ -11,6 +11,16 @@ class TelemetrySample:
     cpu_load: float = 0.0
     queue_fill: float = 0.0
     critical_event: bool = False
+    rolling_ack_mean: float = 0.0
+    rolling_ack_std: float = 0.0
+    rolling_cpu_mean: float = 0.0
+    rolling_cpu_std: float = 0.0
+    rolling_queue_mean: float = 0.0
+    rolling_queue_std: float = 0.0
+    rolling_data_mean: float = 0.0
+    rolling_data_std: float = 0.0
+    anomaly_detected: bool = False
+    data_criticality: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -42,6 +52,9 @@ class ScenarioConfig:
     queue_capacity: int
     target_window: float
     segments: Tuple[ArrivalSegment, ...]
+    telemetry_window_size: int = 5
+    anomaly_sigma_threshold: float = 3.0
+    criticality_threshold: float = 0.9
 
 
 @dataclass(frozen=True)
@@ -54,6 +67,8 @@ class Event:
     queue_fill: float
     critical: bool
     arrival_rate: float
+    data_value: float = 0.0
+    data_criticality: float = 0.0
 
     def with_arrival(self, arrival_time: float) -> "Event":
         return Event(
@@ -65,6 +80,8 @@ class Event:
             queue_fill=self.queue_fill,
             critical=self.critical,
             arrival_rate=self.arrival_rate,
+            data_value=self.data_value,
+            data_criticality=self.data_criticality,
         )
 
 

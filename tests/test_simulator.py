@@ -74,6 +74,81 @@ class SimulatorTests(unittest.TestCase):
             fixed_result.metrics.max_vulnerability_window,
         )
 
+    def test_adaptive_beats_fixed_nominal_on_anomalous_storage_spike(self) -> None:
+        scenario = ScenarioConfig(
+            name="anomaly-spike",
+            duration=5.0,
+            queue_capacity=20,
+            target_window=2.0,
+            telemetry_window_size=3,
+            anomaly_sigma_threshold=2.5,
+            segments=(ArrivalSegment(duration=5.0, rate=5.0, ack_latency=1.0),),
+        )
+        adaptive = AdaptiveEpochPolicy(
+            target_window=2.0,
+            min_epoch=2,
+            max_epoch=12,
+            ema_alpha=0.2,
+            change_threshold=0.1,
+            ack_target=1.0,
+        )
+        fixed = FixedEpochPolicy(epoch_size=10, min_epoch=2, max_epoch=12)
+        events = [
+            Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 5.0, 1.0, 0.1),
+            Event(2, 0.2, b"b", 1.0, 0.2, 0.1, False, 5.0, 1.0, 0.1),
+            Event(3, 0.4, b"c", 1.0, 0.2, 0.1, False, 5.0, 1.0, 0.1),
+            Event(4, 0.6, b"d", 4.5, 0.2, 0.1, False, 5.0, 5.0, 0.1),
+            Event(5, 0.8, b"e", 1.0, 0.2, 0.1, False, 5.0, 1.0, 0.1),
+        ]
+
+        adaptive_result = run_simulation(scenario, adaptive, events=events)
+        fixed_result = run_simulation(scenario, fixed, events=events)
+
+        self.assertLess(
+            adaptive_result.metrics.max_vulnerability_window,
+            fixed_result.metrics.max_vulnerability_window,
+        )
+
+    def test_fixed_small_pays_more_commit_overhead_than_adaptive_under_bursts(self) -> None:
+        scenario = ScenarioConfig(
+            name="bursty-critical",
+            duration=6.0,
+            queue_capacity=100,
+            target_window=2.0,
+            telemetry_window_size=3,
+            anomaly_sigma_threshold=2.5,
+            segments=(ArrivalSegment(duration=6.0, rate=6.0, ack_latency=1.0),),
+        )
+        adaptive = AdaptiveEpochPolicy(
+            target_window=2.0,
+            min_epoch=2,
+            max_epoch=12,
+            ema_alpha=0.2,
+            change_threshold=0.1,
+            ack_target=1.0,
+        )
+        fixed_small = FixedEpochPolicy(epoch_size=2, min_epoch=2, max_epoch=12)
+        events = [
+            Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 6.0, 1.0, 0.1),
+            Event(2, 0.1, b"b", 1.0, 0.2, 0.1, False, 6.0, 1.0, 0.1),
+            Event(3, 0.2, b"c", 1.0, 0.2, 0.1, False, 6.0, 1.0, 0.1),
+            Event(4, 0.3, b"d", 1.0, 0.2, 0.1, False, 6.0, 1.0, 0.1),
+            Event(5, 0.4, b"e", 1.0, 0.2, 0.1, True, 6.0, 5.0, 0.95),
+            Event(6, 1.8, b"f", 1.0, 0.2, 0.1, False, 6.0, 1.0, 0.1),
+        ]
+
+        adaptive_result = run_simulation(scenario, adaptive, events=events)
+        fixed_small_result = run_simulation(scenario, fixed_small, events=events)
+
+        self.assertLess(
+            adaptive_result.metrics.commit_frequency,
+            fixed_small_result.metrics.commit_frequency,
+        )
+        self.assertLessEqual(
+            adaptive_result.metrics.max_vulnerability_window,
+            fixed_small_result.metrics.max_vulnerability_window + 0.3,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

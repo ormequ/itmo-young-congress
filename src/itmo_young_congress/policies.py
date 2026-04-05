@@ -38,6 +38,7 @@ class AdaptiveEpochPolicy:
     use_cpu_load: bool = True
     use_queue_fill: bool = True
     use_early_close: bool = True
+    criticality_threshold: float = 0.9
 
     def evaluate(self, state: EpochState, telemetry: TelemetrySample) -> PolicyDecision:
         base_rate = telemetry.arrival_rate if self.use_arrival_rate else max(1.0, state.current_target / self.target_window)
@@ -45,9 +46,9 @@ class AdaptiveEpochPolicy:
         scaled_target = float(base_target)
 
         if self.use_ack_latency and telemetry.ack_latency > self.ack_target:
-            scaled_target *= 1.0 + min(telemetry.ack_latency / self.ack_target - 1.0, 1.0)
+            scaled_target *= 1.0 + min((telemetry.ack_latency / self.ack_target - 1.0) * 0.25, 0.35)
         if self.use_cpu_load and telemetry.cpu_load > 0.8:
-            scaled_target *= 1.0 + min((telemetry.cpu_load - 0.8) / 0.2, 0.5)
+            scaled_target *= 1.0 + min((telemetry.cpu_load - 0.8) / 0.2, 0.2)
         if self.use_queue_fill and telemetry.queue_fill > 0.8:
             scaled_target *= max(0.25, 1.0 - telemetry.queue_fill)
 
@@ -57,6 +58,8 @@ class AdaptiveEpochPolicy:
 
         should_close = (
             (self.use_early_close and telemetry.critical_event)
+            or (self.use_early_close and telemetry.anomaly_detected)
+            or (self.use_early_close and telemetry.data_criticality >= self.criticality_threshold)
             or (self.use_early_close and telemetry.queue_fill >= 0.9)
             or (self.use_early_close and telemetry.cpu_load >= 0.95)
             or (self.use_early_close and telemetry.ack_latency >= 3 * self.ack_target)
