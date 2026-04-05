@@ -28,7 +28,7 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 Для фиксированной политики размер эпохи задается заранее и не меняется в ходе прогона:
 
 $$
-target_{\mathrm{fixed}} = \operatorname{clamp}(epoch\_size, min\_epoch, max\_epoch)
+target_{\mathrm{fixed}} = \mathrm{clamp}(epoch\_size, min\_epoch, max\_epoch)
 $$
 
 Эпоха закрывается, когда число событий в ней достигает `target_fixed`.
@@ -38,7 +38,7 @@ $$
 Адаптивная политика сначала оценивает базовый размер эпохи по интенсивности входного потока:
 
 $$
-base\_target = \operatorname{round}(arrival\_rate \cdot target\_window)
+base\_target = \mathrm{round}(arrival\_rate \cdot target\_window)
 $$
 
 Дальше этот размер модифицируется телеметрией:
@@ -79,7 +79,7 @@ if queue_fill > policy_queue_fill_trigger:
 
 $$
 candidate = \operatorname{clamp}(
-\operatorname{round}(scaled\_target),\;
+\mathrm{round}(scaled\_target),\;
 min\_epoch,\;
 max\_epoch
 )
@@ -123,8 +123,8 @@ $$
 По окну считаются:
 
 $$
-\mu = \operatorname{average}(window), \qquad
-\sigma = \operatorname{pstdev}(window)
+\mu = \mathrm{average}(window), \qquad
+\sigma = \mathrm{pstdev}(window)
 $$
 
 Новое значение считается аномалией, если:
