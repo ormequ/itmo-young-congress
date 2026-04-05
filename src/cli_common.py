@@ -40,24 +40,12 @@ def make_policies(scenario: ScenarioConfig) -> dict:
     return {
         "fixed-small": FixedEpochPolicy(
             epoch_size=max(1, nominal // 2),
-            min_epoch_events=settings.min_epoch_events,
-            max_epoch_events=settings.max_epoch_events,
-            min_window_seconds=settings.min_window_seconds,
-            max_window_seconds=settings.max_window_seconds,
         ),
         "fixed-nominal": FixedEpochPolicy(
             epoch_size=nominal,
-            min_epoch_events=settings.min_epoch_events,
-            max_epoch_events=settings.max_epoch_events,
-            min_window_seconds=settings.min_window_seconds,
-            max_window_seconds=settings.max_window_seconds,
         ),
         "fixed-large": FixedEpochPolicy(
             epoch_size=max(nominal * 4, 1),
-            min_epoch_events=settings.min_epoch_events,
-            max_epoch_events=settings.max_epoch_events,
-            min_window_seconds=settings.min_window_seconds,
-            max_window_seconds=settings.max_window_seconds,
         ),
         "adaptive": adaptive,
         "adaptive-no-arrival-rate": AdaptiveEpochPolicy(**{**adaptive.__dict__, "use_arrival_rate": False}),

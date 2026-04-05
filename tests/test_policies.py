@@ -6,13 +6,7 @@ from policies import AdaptiveEpochPolicy, FixedEpochPolicy
 
 class FixedPolicyTests(unittest.TestCase):
     def test_closes_epoch_when_fixed_size_is_reached(self) -> None:
-        policy = FixedEpochPolicy(
-            epoch_size=3,
-            min_epoch_events=1,
-            max_epoch_events=10,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
-        )
+        policy = FixedEpochPolicy(epoch_size=3)
         state = EpochState(event_count=3, current_target=3)
 
         decision = policy.evaluate(state, TelemetrySample(arrival_rate=10.0))
@@ -20,27 +14,13 @@ class FixedPolicyTests(unittest.TestCase):
         self.assertTrue(decision.should_close)
         self.assertEqual(decision.next_target, 3)
 
-    def test_respects_epoch_size_bounds(self) -> None:
-        policy = FixedEpochPolicy(
-            epoch_size=100,
-            min_epoch_events=2,
-            max_epoch_events=4,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
-        )
+    def test_keeps_same_target_regardless_of_telemetry(self) -> None:
+        policy = FixedEpochPolicy(epoch_size=7)
+        state = EpochState(event_count=1, current_target=7)
 
-        self.assertEqual(policy.fixed_target, 4)
+        decision = policy.evaluate(state, TelemetrySample(arrival_rate=100.0, queue_fill=0.99))
 
-    def test_prefers_stricter_seconds_upper_bound_when_both_limits_are_set(self) -> None:
-        policy = FixedEpochPolicy(
-            epoch_size=100,
-            min_epoch_events=0,
-            max_epoch_events=40,
-            min_window_seconds=0.0,
-            max_window_seconds=6.0,
-        )
-
-        self.assertEqual(policy.target_for_rate(5.0), 30)
+        self.assertEqual(decision.next_target, 7)
 
 
 class AdaptivePolicyTests(unittest.TestCase):

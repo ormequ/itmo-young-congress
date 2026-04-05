@@ -14,34 +14,14 @@ def _clamp(value: int, lower: int, upper: int) -> int:
 @dataclass
 class FixedEpochPolicy:
     epoch_size: int
-    min_epoch_events: int
-    max_epoch_events: float
-    min_window_seconds: float
-    max_window_seconds: float
 
     @property
     def fixed_target(self) -> int:
-        return self.target_for_rate(0.0)
-
-    def _bounds_for_rate(self, arrival_rate: float) -> tuple[int, int]:
-        lower = self.min_epoch_events
-        upper = math.inf if math.isinf(self.max_epoch_events) else int(self.max_epoch_events)
-        if self.min_window_seconds > 0.0:
-            lower = max(lower, math.ceil(arrival_rate * self.min_window_seconds))
-        if math.isfinite(self.max_window_seconds):
-            upper = min(upper, math.floor(arrival_rate * self.max_window_seconds))
-        if upper < lower:
-            upper = lower
-        return lower, upper
-
-    def target_for_rate(self, arrival_rate: float) -> int:
-        lower, upper = self._bounds_for_rate(arrival_rate)
-        if math.isinf(upper):
-            return max(self.epoch_size, lower)
-        return _clamp(self.epoch_size, lower, upper)
+        return self.epoch_size
 
     def evaluate(self, state: EpochState, telemetry: TelemetrySample) -> PolicyDecision:
-        target = self.target_for_rate(telemetry.arrival_rate)
+        del telemetry
+        target = self.fixed_target
         return PolicyDecision(next_target=target, should_close=state.event_count >= target)
 
 

@@ -18,13 +18,7 @@ class ReportingTests(unittest.TestCase):
             segments=(ArrivalSegment(duration=3.0, rate=5.0, ack_latency=1.0),),
         )
         policies = {
-            "fixed-nominal": FixedEpochPolicy(
-                epoch_size=10,
-                min_epoch_events=2,
-                max_epoch_events=12,
-                min_window_seconds=0.0,
-                max_window_seconds=float("inf"),
-            ),
+            "fixed-nominal": FixedEpochPolicy(epoch_size=10),
             "adaptive": AdaptiveEpochPolicy(
                 target_window=2.0,
                 min_epoch_events=2,
