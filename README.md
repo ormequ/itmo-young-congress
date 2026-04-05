@@ -1,12 +1,14 @@
 # Адаптивное формирование эпох Merkle-дерева в IoT-системах
 
+Python-проект для тезиса про адаптивное формирование эпох Merkle-дерева в IoT-системах.
+
 ## Что есть
 
 - реальные `HMAC` и `Merkle`-вычисления;
-- fixed и adaptive политики формирования эпох;
+- фиксированная и адаптивная политики формирования эпох;
 - дискретно-событийная симуляция с воспроизводимыми `seed`;
-- batch-прогоны, SVG/CSV/Markdown-отчеты;
-- smoke `asyncio` demo-контур.
+- пакетные прогоны, SVG/CSV/Markdown-отчеты;
+- демонстрационный `asyncio`-контур.
 
 ## Быстрый старт
 
@@ -21,9 +23,9 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 
 ## Политики Эпох
 
-### Fixed Policy
+### Фиксированная Политика
 
-Для fixed policy размер эпохи задается заранее и не меняется в ходе прогона:
+Для фиксированной политики размер эпохи задается заранее и не меняется в ходе прогона:
 
 $$
 target_{\mathrm{fixed}} = \operatorname{clamp}(epoch\_size, min\_epoch, max\_epoch)
@@ -31,9 +33,9 @@ $$
 
 Эпоха закрывается, когда число событий в ней достигает `target_fixed`.
 
-### Adaptive Policy
+### Адаптивная Политика
 
-Adaptive policy сначала оценивает базовый размер эпохи по интенсивности входного потока:
+Адаптивная политика сначала оценивает базовый размер эпохи по интенсивности входного потока:
 
 $$
 base\_target = \operatorname{round}(arrival\_rate \cdot target\_window)
@@ -49,12 +51,12 @@ $$
 
 $$
 scaled\_target \gets scaled\_target \cdot \left(
-$$ \min\left(
+1 + \min\left(
 \left(\frac{ack\_latency}{ack\_target} - 1\right) \cdot policy\_ack\_latency\_scale,\;
 policy\_ack\_latency\_cap
 \right)
 \right)
-```
+$$
 
 Если выросла загрузка CPU:
 
@@ -77,13 +79,13 @@ if queue_fill > policy_queue_fill_trigger:
 
 $$
 candidate = \operatorname{clamp}(
-$$eratorname{round}(scaled\_target),\;
+\operatorname{round}(scaled\_target),\;
 min\_epoch,\;
 max\_epoch
 )
-```
+$$
 
-Чтобы policy не дрожала на малом шуме, применяется hysteresis:
+Чтобы политика не дрожала на малом шуме, применяется гистерезис:
 
 $$
 \Delta = \frac{|candidate - current\_target|}{\max(1, current\_target)}
@@ -91,18 +93,18 @@ $$
 
 $$
 next\_target =
-$$gin{cases}
+\begin{cases}
 candidate, & \Delta > policy\_change\_threshold \\
 current\_target, & \text{иначе}
 \end{cases}
-```
+$$
 
 ### Досрочное Закрытие Эпохи
 
-Adaptive policy может закрыть эпоху раньше заполнения, если выполняется хотя бы одно условие:
+Адаптивная политика может закрыть эпоху раньше заполнения, если выполняется хотя бы одно условие:
 
 - пришло критичное событие;
-- rolling anomaly detector пометил телеметрию как аномальную;
+- детектор аномалий по скользящему окну пометил телеметрию как аномальную;
 - `data_criticality >= criticality_threshold`;
 - `queue_fill >= policy_queue_close_threshold`;
 - `cpu_load >= policy_cpu_close_threshold`;
@@ -114,16 +116,16 @@ $$
 should\_close = early\_close\_condition \lor (event\_count \ge next\_target)
 $$
 
-## Rolling Anomaly Detection
+## Детектирование Аномалий По Скользящему Окну
 
 Для `ack_latency`, `cpu_load`, `queue_fill` и `data_value` хранится окно последних `telemetry_window_size` значений.
 
 По окну считаются:
 
-```latex
+$$
 \mu = \operatorname{average}(window), \qquad
 \sigma = \operatorname{pstdev}(window)
-```
+$$
 
 Новое значение считается аномалией, если:
 
@@ -161,51 +163,51 @@ $$
 
 Это верхнеуровневые параметры, которыми обычно имеет смысл управлять при исследовании.
 
-| env | default | смысл |
+| env | значение по умолчанию | смысл |
 | --- | ---: | --- |
-| `IYC_TELEMETRY_WINDOW_SIZE` | `5` | размер окна для rolling anomaly detection |
+| `IYC_TELEMETRY_WINDOW_SIZE` | `5` | размер окна для детектирования аномалий |
 | `IYC_ANOMALY_SIGMA_THRESHOLD` | `3.0` | порог аномалии в единицах стандартного отклонения |
-| `IYC_CRITICALITY_THRESHOLD` | `0.95` | критичность, при которой adaptive закрывает эпоху немедленно |
+| `IYC_CRITICALITY_THRESHOLD` | `0.95` | критичность, при которой адаптивная политика закрывает эпоху немедленно |
 | `IYC_POLICY_MIN_EPOCH` | `2` | минимальный размер эпохи |
-| `IYC_POLICY_MAX_EPOCH_MULTIPLIER` | `4` | верхняя граница epoch size как множитель от nominal |
-| `IYC_POLICY_CHANGE_THRESHOLD` | `0.15` | минимальное относительное изменение target для перенастройки |
+| `IYC_POLICY_MAX_EPOCH_MULTIPLIER` | `4` | верхняя граница размера эпохи как множитель от номинального значения |
+| `IYC_POLICY_CHANGE_THRESHOLD` | `0.15` | минимальное относительное изменение `target` для перенастройки |
 | `IYC_POLICY_ACK_TARGET` | `1.0` | нормальная задержка подтверждения записи |
 
 ## Дополнительные Параметры
 
 Это коэффициенты более низкого уровня. Обычно они нужны для тонкого тюнинга, а не для первого запуска.
 
-| env | default | смысл |
+| env | значение по умолчанию | смысл |
 | --- | ---: | --- |
-| `IYC_POLICY_MAX_EPOCH_FLOOR` | `8` | нижняя граница для `max_epoch`, если nominal мал |
+| `IYC_POLICY_MAX_EPOCH_FLOOR` | `8` | нижняя граница для `max_epoch`, если номинальный размер мал |
 | `IYC_POLICY_ACK_LATENCY_SCALE` | `0.15` | сила реакции на ухудшение `ack_latency` |
-| `IYC_POLICY_ACK_LATENCY_CAP` | `0.20` | максимум увеличения target из-за `ack_latency` |
-| `IYC_POLICY_CPU_LOAD_TRIGGER` | `0.8` | порог, после которого CPU влияет на target |
-| `IYC_POLICY_CPU_LOAD_SCALE` | `0.3` | чувствительность к CPU-load после порога |
-| `IYC_POLICY_CPU_LOAD_CAP` | `0.10` | максимум увеличения target из-за CPU |
-| `IYC_POLICY_QUEUE_FILL_TRIGGER` | `0.8` | порог, после которого очередь начинает уменьшать target |
-| `IYC_POLICY_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент shrink при высокой очереди |
-| `IYC_POLICY_QUEUE_CLOSE_THRESHOLD` | `0.9` | hard-threshold раннего закрытия по очереди |
-| `IYC_POLICY_CPU_CLOSE_THRESHOLD` | `0.95` | hard-threshold раннего закрытия по CPU |
-| `IYC_POLICY_ACK_CLOSE_MULTIPLIER` | `2.5` | hard-threshold раннего закрытия по `ack_latency` |
-| `IYC_SEGMENT_ACK_LATENCY` | `1.0` | fallback `ack_latency` для сегмента без явного поля |
-| `IYC_SEGMENT_CPU_LOAD` | `0.2` | fallback `cpu_load` для сегмента без явного поля |
-| `IYC_SEGMENT_QUEUE_FILL` | `0.1` | fallback `queue_fill` для сегмента без явного поля |
-| `IYC_SIMULATOR_DATA_VALUE` | `1.0` | масштаб synthetic `data_value` |
-| `IYC_SIMULATOR_CRITICALITY_DEFAULT` | `0.1` | критичность обычного synthetic события |
-| `IYC_SIMULATOR_CRITICALITY_CRITICAL` | `1.0` | критичность synthetic critical event |
+| `IYC_POLICY_ACK_LATENCY_CAP` | `0.20` | максимум увеличения `target` из-за `ack_latency` |
+| `IYC_POLICY_CPU_LOAD_TRIGGER` | `0.8` | порог, после которого CPU влияет на `target` |
+| `IYC_POLICY_CPU_LOAD_SCALE` | `0.3` | чувствительность к загрузке CPU после порога |
+| `IYC_POLICY_CPU_LOAD_CAP` | `0.10` | максимум увеличения `target` из-за CPU |
+| `IYC_POLICY_QUEUE_FILL_TRIGGER` | `0.8` | порог, после которого очередь начинает уменьшать `target` |
+| `IYC_POLICY_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высокой очереди |
+| `IYC_POLICY_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
+| `IYC_POLICY_CPU_CLOSE_THRESHOLD` | `0.95` | жесткий порог раннего закрытия по CPU |
+| `IYC_POLICY_ACK_CLOSE_MULTIPLIER` | `2.5` | жесткий порог раннего закрытия по `ack_latency` |
+| `IYC_SEGMENT_ACK_LATENCY` | `1.0` | значение `ack_latency` по умолчанию для сегмента без явного поля |
+| `IYC_SEGMENT_CPU_LOAD` | `0.2` | значение `cpu_load` по умолчанию для сегмента без явного поля |
+| `IYC_SEGMENT_QUEUE_FILL` | `0.1` | значение `queue_fill` по умолчанию для сегмента без явного поля |
+| `IYC_SIMULATOR_DATA_VALUE` | `1.0` | масштаб синтетического `data_value` |
+| `IYC_SIMULATOR_CRITICALITY_DEFAULT` | `0.1` | критичность обычного синтетического события |
+| `IYC_SIMULATOR_CRITICALITY_CRITICAL` | `1.0` | критичность синтетического критичного события |
 
-## Почему Обновлены Дефолты
+## Почему Изменены Значения По Умолчанию
 
-Текущие defaults сдвинуты в сторону более безопасного поведения adaptive policy.
+Текущие значения по умолчанию сдвинуты в сторону более безопасного поведения адаптивной политики.
 
 Что изменено относительно более раннего набора:
 
-- ослаблена реакция на `ack_latency`, чтобы policy не раздувала эпохи слишком агрессивно;
-- ослаблена реакция на `cpu_load`, чтобы high CPU не превращался в рост окна уязвимости;
+- ослаблена реакция на `ack_latency`, чтобы политика не раздувала эпохи слишком агрессивно;
+- ослаблена реакция на `cpu_load`, чтобы высокая загрузка CPU не превращалась в рост окна уязвимости;
 - увеличен `policy_change_threshold`, чтобы убрать мелкие бессмысленные перестройки;
 - повышен `criticality_threshold`, чтобы мгновенное закрытие происходило только на действительно критичных данных;
-- снижен `policy_ack_close_multiplier`, чтобы при заметной деградации внешнего хранилища adaptive быстрее закрывала эпоху.
+- снижен `policy_ack_close_multiplier`, чтобы при заметной деградации внешнего хранилища адаптивная политика быстрее закрывала эпоху.
 
 Практический эффект:
 
@@ -213,7 +215,7 @@ $$
 - `storage-degradation` лучше отрабатывается за счет более раннего закрытия;
 - цена улучшения в стрессовых сценариях может выражаться в большей `commit_frequency`.
 
-Это намеренный trade-off: текущие defaults ориентированы не на минимальное число фиксаций, а на более безопасное поведение в деградирующих режимах.
+Это намеренный компромисс: текущие значения по умолчанию ориентированы не на минимальное число фиксаций, а на более безопасное поведение в деградирующих режимах.
 
 ## Сценарии
 
