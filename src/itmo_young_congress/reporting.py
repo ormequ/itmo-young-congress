@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+from typing import Dict, List, Sequence
+
+from itmo_young_congress.domain import ScenarioConfig
+from itmo_young_congress.simulator import run_simulation
+
+
+def run_batch(
+    scenarios: Sequence[ScenarioConfig],
+    policies: Dict[str, object],
+    seeds: Sequence[int],
+    output_dir: Path,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rows: List[dict] = []
+    for scenario in scenarios:
+        for seed in seeds:
+            for policy_name, policy in policies.items():
+                result = run_simulation(scenario, policy, seed=seed)
+                rows.append(
+                    {
+                        "scenario": scenario.name,
+                        "seed": seed,
+                        "policy": policy_name,
+                        "avg_vulnerability_window": result.metrics.avg_vulnerability_window,
+                        "max_vulnerability_window": result.metrics.max_vulnerability_window,
+                        "commit_frequency": result.metrics.commit_frequency,
+                        "max_queue_depth": result.metrics.max_queue_depth,
+                        "throughput": result.metrics.throughput,
+                        "avg_proof_bytes": result.metrics.avg_proof_bytes,
+                    }
+                )
+
+    summary_path = output_dir / "batch_summary.json"
+    summary_path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    return summary_path
+
+
+def _aggregate(rows: Sequence[dict]) -> List[dict]:
+    grouped: Dict[tuple, List[dict]] = {}
+    for row in rows:
+        grouped.setdefault((row["scenario"], row["policy"]), []).append(row)
+
+    summary = []
+    for (scenario, policy), group in grouped.items():
+        count = len(group)
+        summary.append(
+            {
+                "scenario": scenario,
+                "policy": policy,
+                "avg_vulnerability_window": sum(item["avg_vulnerability_window"] for item in group) / count,
+                "max_vulnerability_window": max(item["max_vulnerability_window"] for item in group),
+                "commit_frequency": sum(item["commit_frequency"] for item in group) / count,
+                "max_queue_depth": max(item["max_queue_depth"] for item in group),
+                "throughput": sum(item["throughput"] for item in group) / count,
+                "avg_proof_bytes": sum(item["avg_proof_bytes"] for item in group) / count,
+            }
+        )
+    summary.sort(key=lambda item: (item["scenario"], item["policy"]))
+    return summary
+
+
+def build_report(summary_path: Path, report_dir: Path) -> Path:
+    rows = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary = _aggregate(rows)
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_path = report_dir / "summary.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(summary[0].keys()))
+        writer.writeheader()
+        writer.writerows(summary)
+
+    md_path = report_dir / "summary.md"
+    md_lines = [
+        "| scenario | policy | avg_window | max_window | commit_frequency | max_queue_depth | throughput | avg_proof_bytes |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in summary:
+        md_lines.append(
+            "| {scenario} | {policy} | {avg_vulnerability_window:.3f} | {max_vulnerability_window:.3f} | "
+            "{commit_frequency:.3f} | {max_queue_depth} | {throughput:.3f} | {avg_proof_bytes:.1f} |".format(
+                **row
+            )
+        )
+    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    svg_path = report_dir / "avg_window.svg"
+    max_value = max(row["avg_vulnerability_window"] for row in summary) or 1.0
+    bar_width = 80
+    gap = 20
+    height = 50 + 40 * len(summary)
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="700" height="{height}">',
+        '<style>text { font: 12px monospace; }</style>',
+    ]
+    for index, row in enumerate(summary):
+        y = 30 + index * 35
+        width = 20 + (row["avg_vulnerability_window"] / max_value) * 400
+        label = f'{row["scenario"]}/{row["policy"]}'
+        lines.append(f'<text x="10" y="{y + 12}">{label}</text>')
+        lines.append(f'<rect x="220" y="{y}" width="{width:.1f}" height="20" fill="#1f77b4" />')
+        lines.append(
+            f'<text x="{230 + width:.1f}" y="{y + 12}">{row["avg_vulnerability_window"]:.3f}</text>'
+        )
+    lines.append("</svg>")
+    svg_path.write_text("\n".join(lines), encoding="utf-8")
+
+    return report_dir
