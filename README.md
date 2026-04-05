@@ -171,15 +171,15 @@ vulnerability_window = commit_time - event.arrival_time
 
 | env | значение по умолчанию | смысл |
 | --- | ---: | --- |
-| `IYC_TELEMETRY_WINDOW_SIZE` | `5` | размер окна для детектирования аномалий |
-| `IYC_ANOMALY_SIGMA_THRESHOLD` | `3.0` | порог аномалии в единицах стандартного отклонения |
-| `IYC_CRITICALITY_THRESHOLD` | `0.95` | критичность, при которой адаптивная политика закрывает эпоху немедленно |
-| `IYC_MIN_EPOCH_EVENTS` | `0` | минимальное число событий в эпохе, если ограничение нужно |
-| `IYC_MAX_EPOCH_EVENTS` | `inf` | максимальное число событий в эпохе, если ограничение нужно |
-| `IYC_MIN_WINDOW_SECONDS` | `0` | минимальная длительность открытой эпохи в секундах |
-| `IYC_MAX_WINDOW_SECONDS` | `inf` | максимальная длительность открытой эпохи в секундах |
-| `IYC_POLICY_CHANGE_THRESHOLD` | `0.15` | минимальное относительное изменение `target` для перенастройки |
-| `IYC_POLICY_ACK_TARGET` | `1.0` | нормальная задержка подтверждения записи |
+| `TELEMETRY_WINDOW_SIZE` | `5` | размер окна для детектирования аномалий |
+| `ANOMALY_SIGMA_THRESHOLD` | `3.0` | порог аномалии в единицах стандартного отклонения |
+| `CRITICALITY_THRESHOLD` | `0.95` | критичность, при которой адаптивная политика закрывает эпоху немедленно |
+| `MIN_EPOCH_EVENTS` | `0` | минимальное число событий в эпохе, если ограничение нужно |
+| `MAX_EPOCH_EVENTS` | `inf` | максимальное число событий в эпохе, если ограничение нужно |
+| `MIN_WINDOW_SECONDS` | `0` | минимальная длительность открытой эпохи в секундах |
+| `MAX_WINDOW_SECONDS` | `inf` | максимальная длительность открытой эпохи в секундах |
+| `POLICY_CHANGE_THRESHOLD` | `0.15` | минимальное относительное изменение `target` для перенастройки |
+| `POLICY_ACK_TARGET` | `1.0` | нормальная задержка подтверждения записи |
 
 ## Дополнительные параметры
 
@@ -187,22 +187,22 @@ vulnerability_window = commit_time - event.arrival_time
 
 | env | значение по умолчанию | смысл |
 | --- | ---: | --- |
-| `IYC_POLICY_ACK_LATENCY_SCALE` | `0.15` | сила реакции на ухудшение `ack_latency` |
-| `IYC_POLICY_ACK_LATENCY_CAP` | `0.20` | максимум увеличения `target` из-за `ack_latency` |
-| `IYC_POLICY_CPU_LOAD_TRIGGER` | `0.8` | порог, после которого CPU влияет на `target` |
-| `IYC_POLICY_CPU_LOAD_SCALE` | `0.3` | чувствительность к загрузке CPU после порога |
-| `IYC_POLICY_CPU_LOAD_CAP` | `0.10` | максимум увеличения `target` из-за CPU |
-| `IYC_POLICY_QUEUE_FILL_TRIGGER` | `0.8` | порог, после которого очередь начинает уменьшать `target` |
-| `IYC_POLICY_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высокой очереди |
-| `IYC_POLICY_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
-| `IYC_POLICY_CPU_CLOSE_THRESHOLD` | `0.95` | жесткий порог раннего закрытия по CPU |
-| `IYC_POLICY_ACK_CLOSE_MULTIPLIER` | `2.5` | жесткий порог раннего закрытия по `ack_latency` |
-| `IYC_SEGMENT_ACK_LATENCY` | `1.0` | значение `ack_latency` по умолчанию для сегмента без явного поля |
-| `IYC_SEGMENT_CPU_LOAD` | `0.2` | значение `cpu_load` по умолчанию для сегмента без явного поля |
-| `IYC_SEGMENT_QUEUE_FILL` | `0.1` | значение `queue_fill` по умолчанию для сегмента без явного поля |
-| `IYC_SIMULATOR_DATA_VALUE` | `1.0` | масштаб синтетического `data_value` |
-| `IYC_SIMULATOR_CRITICALITY_DEFAULT` | `0.1` | критичность обычного синтетического события |
-| `IYC_SIMULATOR_CRITICALITY_CRITICAL` | `1.0` | критичность синтетического критичного события |
+| `POLICY_ACK_LATENCY_SCALE` | `0.15` | сила реакции на ухудшение `ack_latency` |
+| `POLICY_ACK_LATENCY_CAP` | `0.20` | максимум увеличения `target` из-за `ack_latency` |
+| `POLICY_CPU_LOAD_TRIGGER` | `0.8` | порог, после которого CPU влияет на `target` |
+| `POLICY_CPU_LOAD_SCALE` | `0.3` | чувствительность к загрузке CPU после порога |
+| `POLICY_CPU_LOAD_CAP` | `0.10` | максимум увеличения `target` из-за CPU |
+| `POLICY_QUEUE_FILL_TRIGGER` | `0.8` | порог, после которого очередь начинает уменьшать `target` |
+| `POLICY_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высокой очереди |
+| `POLICY_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
+| `POLICY_CPU_CLOSE_THRESHOLD` | `0.95` | жесткий порог раннего закрытия по CPU |
+| `POLICY_ACK_CLOSE_MULTIPLIER` | `2.5` | жесткий порог раннего закрытия по `ack_latency` |
+| `SEGMENT_ACK_LATENCY` | `1.0` | значение `ack_latency` по умолчанию для сегмента без явного поля |
+| `SEGMENT_CPU_LOAD` | `0.2` | значение `cpu_load` по умолчанию для сегмента без явного поля |
+| `SEGMENT_QUEUE_FILL` | `0.1` | значение `queue_fill` по умолчанию для сегмента без явного поля |
+| `SIMULATOR_DATA_VALUE` | `1.0` | масштаб синтетического `data_value` |
+| `SIMULATOR_CRITICALITY_DEFAULT` | `0.1` | критичность обычного синтетического события |
+| `SIMULATOR_CRITICALITY_CRITICAL` | `1.0` | критичность синтетического критичного события |
 
 ## Пример ограничений
 

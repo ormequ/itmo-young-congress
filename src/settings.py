@@ -53,36 +53,36 @@ class Settings:
 def load_settings() -> Settings:
     return Settings(
         # Baseline segment telemetry used when configs omit per-segment values.
-        segment_ack_latency=_env_float("IYC_SEGMENT_ACK_LATENCY", 1.0),
-        segment_cpu_load=_env_float("IYC_SEGMENT_CPU_LOAD", 0.2),
-        segment_queue_fill=_env_float("IYC_SEGMENT_QUEUE_FILL", 0.1),
+        segment_ack_latency=_env_float("SEGMENT_ACK_LATENCY", 1.0),
+        segment_cpu_load=_env_float("SEGMENT_CPU_LOAD", 0.2),
+        segment_queue_fill=_env_float("SEGMENT_QUEUE_FILL", 0.1),
         # Rolling anomaly detector defaults.
-        telemetry_window_size=_env_int("IYC_TELEMETRY_WINDOW_SIZE", 5),
-        anomaly_sigma_threshold=_env_float("IYC_ANOMALY_SIGMA_THRESHOLD", 3.0),
-        criticality_threshold=_env_float("IYC_CRITICALITY_THRESHOLD", 0.95),
+        telemetry_window_size=_env_int("TELEMETRY_WINDOW_SIZE", 5),
+        anomaly_sigma_threshold=_env_float("ANOMALY_SIGMA_THRESHOLD", 3.0),
+        criticality_threshold=_env_float("CRITICALITY_THRESHOLD", 0.95),
         # Optional epoch constraints; default values keep them effectively disabled.
-        min_epoch_events=_env_int("IYC_MIN_EPOCH_EVENTS", 0),
-        max_epoch_events=_env_float("IYC_MAX_EPOCH_EVENTS", float("inf")),
-        min_window_seconds=_env_float("IYC_MIN_WINDOW_SECONDS", 0.0),
-        max_window_seconds=_env_float("IYC_MAX_WINDOW_SECONDS", float("inf")),
+        min_epoch_events=_env_int("MIN_EPOCH_EVENTS", 0),
+        max_epoch_events=_env_float("MAX_EPOCH_EVENTS", float("inf")),
+        min_window_seconds=_env_float("MIN_WINDOW_SECONDS", 0.0),
+        max_window_seconds=_env_float("MAX_WINDOW_SECONDS", float("inf")),
         # Core adaptive-policy defaults.
-        policy_change_threshold=_env_float("IYC_POLICY_CHANGE_THRESHOLD", 0.15),
-        policy_ack_target=_env_float("IYC_POLICY_ACK_TARGET", 1.0),
+        policy_change_threshold=_env_float("POLICY_CHANGE_THRESHOLD", 0.15),
+        policy_ack_target=_env_float("POLICY_ACK_TARGET", 1.0),
         # Storage-latency adjustment coefficients.
-        policy_ack_latency_scale=_env_float("IYC_POLICY_ACK_LATENCY_SCALE", 0.15),
-        policy_ack_latency_cap=_env_float("IYC_POLICY_ACK_LATENCY_CAP", 0.2),
+        policy_ack_latency_scale=_env_float("POLICY_ACK_LATENCY_SCALE", 0.15),
+        policy_ack_latency_cap=_env_float("POLICY_ACK_LATENCY_CAP", 0.2),
         # CPU-load adjustment coefficients.
-        policy_cpu_load_trigger=_env_float("IYC_POLICY_CPU_LOAD_TRIGGER", 0.8),
-        policy_cpu_load_scale=_env_float("IYC_POLICY_CPU_LOAD_SCALE", 0.3),
-        policy_cpu_load_cap=_env_float("IYC_POLICY_CPU_LOAD_CAP", 0.1),
+        policy_cpu_load_trigger=_env_float("POLICY_CPU_LOAD_TRIGGER", 0.8),
+        policy_cpu_load_scale=_env_float("POLICY_CPU_LOAD_SCALE", 0.3),
+        policy_cpu_load_cap=_env_float("POLICY_CPU_LOAD_CAP", 0.1),
         # Queue and anomaly-triggered early-close thresholds.
-        policy_queue_fill_trigger=_env_float("IYC_POLICY_QUEUE_FILL_TRIGGER", 0.8),
-        policy_queue_fill_min_scale=_env_float("IYC_POLICY_QUEUE_FILL_MIN_SCALE", 0.25),
-        policy_queue_close_threshold=_env_float("IYC_POLICY_QUEUE_CLOSE_THRESHOLD", 0.9),
-        policy_cpu_close_threshold=_env_float("IYC_POLICY_CPU_CLOSE_THRESHOLD", 0.95),
-        policy_ack_close_multiplier=_env_float("IYC_POLICY_ACK_CLOSE_MULTIPLIER", 2.5),
+        policy_queue_fill_trigger=_env_float("POLICY_QUEUE_FILL_TRIGGER", 0.8),
+        policy_queue_fill_min_scale=_env_float("POLICY_QUEUE_FILL_MIN_SCALE", 0.25),
+        policy_queue_close_threshold=_env_float("POLICY_QUEUE_CLOSE_THRESHOLD", 0.9),
+        policy_cpu_close_threshold=_env_float("POLICY_CPU_CLOSE_THRESHOLD", 0.95),
+        policy_ack_close_multiplier=_env_float("POLICY_ACK_CLOSE_MULTIPLIER", 2.5),
         # Synthetic event payload defaults used by the simulator.
-        simulator_generated_data_value=_env_float("IYC_SIMULATOR_DATA_VALUE", 1.0),
-        simulator_generated_criticality_default=_env_float("IYC_SIMULATOR_CRITICALITY_DEFAULT", 0.1),
-        simulator_generated_criticality_critical=_env_float("IYC_SIMULATOR_CRITICALITY_CRITICAL", 1.0),
+        simulator_generated_data_value=_env_float("SIMULATOR_DATA_VALUE", 1.0),
+        simulator_generated_criticality_default=_env_float("SIMULATOR_CRITICALITY_DEFAULT", 0.1),
+        simulator_generated_criticality_critical=_env_float("SIMULATOR_CRITICALITY_CRITICAL", 1.0),
     )
