@@ -19,9 +19,9 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 
 Для фиксированной политики размер эпохи задается заранее и не меняется в ходе прогона:
 
-$$
-target_{\mathrm{fixed}} = \mathrm{clamp}(epoch\_size, min\_epoch, max\_epoch)
-$$
+```text
+target_fixed = epoch_size
+```
 
 Эпоха закрывается, когда число событий в ней достигает `target_fixed`.
 
@@ -29,26 +29,24 @@ $$
 
 Адаптивная политика сначала оценивает базовый размер эпохи по интенсивности входного потока:
 
-$$
-base\_target = \mathrm{round}(arrival\_rate \cdot target\_window)
-$$
+```text
+base_target = round(arrival_rate * target_window)
+```
 
 Дальше этот размер модифицируется телеметрией:
 
-$$
-scaled\_target = base\_target
-$$
+```text
+scaled_target = base_target
+```
 
 Если подтверждение записи стало медленнее нормы:
 
-$$
-scaled\_target \gets scaled\_target \cdot \left(
-1 + \min\left(
-\left(\frac{ack\_latency}{ack\_target} - 1\right) \cdot policy\_ack\_latency\_scale,\;
-policy\_ack\_latency\_cap
-\right)
-\right)
-$$
+```text
+scaled_target *= 1 + min(
+  (ack_latency / ack_target - 1) * policy_ack_latency_scale,
+  policy_ack_latency_cap
+)
+```
 
 Если выросла загрузка CPU:
 
@@ -69,13 +67,9 @@ if queue_fill > policy_queue_fill_trigger:
 
 После этого новый target ограничивается диапазоном:
 
-$$
-candidate = \mathrm{clamp}(
-\mathrm{round}(scaled\_target),\;
-min\_epoch,\;
-max\_epoch
-)
-$$
+```text
+candidate = clamp(round(scaled_target), min_epoch, max_epoch)
+```
 
 Здесь:
 - `min_epoch` это максимум из `min_epoch_events` и ограничения, полученного из `min_window_seconds`;
@@ -86,17 +80,10 @@ $$
 
 Чтобы политика не дрожала на малом шуме, применяется гистерезис:
 
-$$
-\Delta = \frac{|candidate - current\_target|}{\max(1, current\_target)}
-$$
-
-$$
-next\_target =
-\begin{cases}
-candidate, & \Delta > policy\_change\_threshold \\
-current\_target, & \text{иначе}
-\end{cases}
-$$
+```text
+delta_ratio = abs(candidate - current_target) / max(1, current_target)
+next_target = candidate if delta_ratio > policy_change_threshold else current_target
+```
 
 ### Досрочное Закрытие Эпохи
 
@@ -111,9 +98,9 @@ $$
 
 Итоговое правило:
 
-$$
-should\_close = early\_close\_condition \lor (event\_count \ge next\_target)
-$$
+```text
+should_close = early_close_condition or event_count >= next_target
+```
 
 ## Детектирование Аномалий По Скользящему Окну
 
@@ -121,16 +108,16 @@ $$
 
 По окну считаются:
 
-$$
-\mu = \mathrm{average}(window), \qquad
-\sigma = \mathrm{pstdev}(window)
-$$
+```text
+mean = average(window)
+std = pstdev(window)
+```
 
 Новое значение считается аномалией, если:
 
-$$
-|value - \mu| > anomaly\_sigma\_threshold \cdot \sigma
-$$
+```text
+abs(value - mean) > anomaly_sigma_threshold * std
+```
 
 Если `std` почти нулевое, любое ненулевое отклонение от среднего тоже считается аномалией.
 
@@ -154,9 +141,9 @@ $$
 
 Смысл окна уязвимости:
 
-$$
-vulnerability\_window = commit\_time - event.arrival\_time
-$$
+```text
+vulnerability_window = commit_time - event.arrival_time
+```
 
 ## Основные Параметры
 
