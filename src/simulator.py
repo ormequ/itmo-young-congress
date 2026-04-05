@@ -97,6 +97,27 @@ def run_simulation(
     seed: int = 1,
     events: Optional[Sequence[Event]] = None,
 ) -> SimulationResult:
+    result, _ = _run_simulation_internal(scenario, policy, seed=seed, events=events, collect_trace=False)
+    return result
+
+
+def run_simulation_trace(
+    scenario: ScenarioConfig,
+    policy: object,
+    seed: int = 1,
+    events: Optional[Sequence[Event]] = None,
+) -> list[dict]:
+    _, trace = _run_simulation_internal(scenario, policy, seed=seed, events=events, collect_trace=True)
+    return trace
+
+
+def _run_simulation_internal(
+    scenario: ScenarioConfig,
+    policy: object,
+    seed: int = 1,
+    events: Optional[Sequence[Event]] = None,
+    collect_trace: bool = False,
+) -> tuple[SimulationResult, list[dict]]:
     event_stream = list(events) if events is not None else generate_events(scenario, seed)
     epoch_events: List[Event] = []
     commits: List[CommitRecord] = []
@@ -106,6 +127,7 @@ def run_simulation(
     cpu_history: List[float] = []
     queue_history: List[float] = []
     data_history: List[float] = []
+    trace: List[dict] = []
 
     current_target = getattr(policy, "fixed_target", max(1, round(scenario.target_window)))
 
@@ -168,6 +190,21 @@ def run_simulation(
         )
         state = EpochState(event_count=len(epoch_events), current_target=current_target)
         decision = policy.evaluate(state, telemetry)
+        if collect_trace:
+            trace.append(
+                {
+                    "time": event.arrival_time,
+                    "policy": _policy_name(policy),
+                    "arrival_rate": event.arrival_rate,
+                    "ack_latency": event.ack_latency,
+                    "cpu_load": event.cpu_load,
+                    "queue_fill": rolling_queue_fill,
+                    "event_count": len(epoch_events),
+                    "current_target": current_target,
+                    "next_target": decision.next_target,
+                    "should_close": decision.should_close,
+                }
+            )
         current_target = decision.next_target
         if decision.should_close:
             close_epoch(event.arrival_time)
@@ -197,11 +234,14 @@ def run_simulation(
         avg_proof_hashes=avg_proof_hashes,
         avg_proof_bytes=avg_proof_hashes * 32.0,
     )
-    return SimulationResult(
-        scenario=scenario.name,
-        policy=_policy_name(policy),
-        metrics=metrics,
-        commits=tuple(commits),
+    return (
+        SimulationResult(
+            scenario=scenario.name,
+            policy=_policy_name(policy),
+            metrics=metrics,
+            commits=tuple(commits),
+        ),
+        trace,
     )
 
 

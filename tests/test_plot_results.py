@@ -92,6 +92,58 @@ class PlotResultsTests(unittest.TestCase):
             self.assertTrue((output_dir / "stress_max_window.png").exists())
             self.assertTrue((output_dir / "stress_avg_proof_bytes.png").exists())
 
+    def test_build_timeline_plots_writes_png_files(self) -> None:
+        plot_results = _load_plot_module()
+        trace = {
+            "scenario": "burst",
+            "points": [
+                {
+                    "time": 0.2,
+                    "policy": "adaptive",
+                    "arrival_rate": 3.0,
+                    "ack_latency": 1.0,
+                    "queue_fill": 0.1,
+                    "event_count": 1,
+                    "current_target": 2,
+                    "next_target": 6,
+                    "should_close": False,
+                },
+                {
+                    "time": 1.4,
+                    "policy": "adaptive",
+                    "arrival_rate": 8.0,
+                    "ack_latency": 1.0,
+                    "queue_fill": 0.6,
+                    "event_count": 2,
+                    "current_target": 6,
+                    "next_target": 16,
+                    "should_close": False,
+                },
+                {
+                    "time": 1.9,
+                    "policy": "adaptive",
+                    "arrival_rate": 8.0,
+                    "ack_latency": 2.8,
+                    "queue_fill": 0.9,
+                    "event_count": 3,
+                    "current_target": 16,
+                    "next_target": 8,
+                    "should_close": True,
+                },
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            trace_path = tmp / "trace.json"
+            trace_path.write_text(json.dumps(trace), encoding="utf-8")
+
+            output_dir = tmp / "plots"
+            plot_results.build_timeline_plots(trace_path, output_dir)
+
+            self.assertTrue((output_dir / "target_timeline.png").exists())
+            self.assertTrue((output_dir / "telemetry_timeline.png").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

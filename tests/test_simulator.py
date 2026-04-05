@@ -2,7 +2,7 @@ import unittest
 
 from domain import ArrivalSegment, Event, ScenarioConfig
 from policies import AdaptiveEpochPolicy, FixedEpochPolicy
-from simulator import generate_events, run_simulation
+from simulator import generate_events, run_simulation, run_simulation_trace
 
 
 class GeneratorTests(unittest.TestCase):
@@ -22,6 +22,33 @@ class GeneratorTests(unittest.TestCase):
 
 
 class SimulatorTests(unittest.TestCase):
+    def test_trace_records_target_updates_and_epoch_closures(self) -> None:
+        scenario = ScenarioConfig(
+            name="burst",
+            duration=4.0,
+            queue_capacity=16,
+            target_window=2.0,
+            segments=(
+                ArrivalSegment(duration=2.0, rate=3.0, ack_latency=1.0),
+                ArrivalSegment(duration=2.0, rate=8.0, ack_latency=1.0),
+            ),
+        )
+        adaptive = AdaptiveEpochPolicy(
+            target_window=2.0,
+            min_epoch_events=0,
+            max_epoch_events=float("inf"),
+            min_window_seconds=0.0,
+            max_window_seconds=float("inf"),
+            change_threshold=0.1,
+            ack_target=1.0,
+        )
+
+        trace = run_simulation_trace(scenario, adaptive, seed=3)
+
+        self.assertGreaterEqual(len(trace), 2)
+        self.assertTrue(any(point["should_close"] for point in trace))
+        self.assertGreater(len({point["next_target"] for point in trace}), 1)
+
     def test_fixed_policy_uses_ack_latency_as_vulnerability_window(self) -> None:
         scenario = ScenarioConfig(
             name="steady",
