@@ -26,7 +26,7 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 Для fixed policy размер эпохи задается заранее и не меняется в ходе прогона:
 
 ```latex
-target_{\mathrm{fixed}} = \operatorname{clamp}(epoch\_size, min\_epoch, max\_epoch)
+target_{mathrm{fixed}} = operatorname{clamp}(epoch_size, min_epoch, max_epoch)
 ```
 
 Эпоха закрывается, когда число событий в ней достигает `target_fixed`.
@@ -36,24 +36,24 @@ target_{\mathrm{fixed}} = \operatorname{clamp}(epoch\_size, min\_epoch, max\_epo
 Adaptive policy сначала оценивает базовый размер эпохи по интенсивности входного потока:
 
 ```latex
-base\_target = \operatorname{round}(arrival\_rate \cdot target\_window)
+base_target = operatorname{round}(arrival_rate cdot target_window)
 ```
 
 Дальше этот размер модифицируется телеметрией:
 
 ```latex
-scaled\_target = base\_target
+scaled_target = base_target
 ```
 
 Если подтверждение записи стало медленнее нормы:
 
 ```latex
-scaled\_target \gets scaled\_target \cdot \left(
-1 + \min\left(
-\left(\frac{ack\_latency}{ack\_target} - 1\right) \cdot policy\_ack\_latency\_scale,\;
-policy\_ack\_latency\_cap
-\right)
-\right)
+scaled_target gets scaled_target cdot left(
+1 + minleft(
+left(frac{ack_latency}{ack_target} - 1right) cdot policy_ack_latency_scale,;
+policy_ack_latency_cap
+right)
+right)
 ```
 
 Если выросла загрузка CPU:
@@ -76,25 +76,25 @@ if queue_fill > policy_queue_fill_trigger:
 После этого новый target ограничивается диапазоном:
 
 ```latex
-candidate = \operatorname{clamp}(
-\operatorname{round}(scaled\_target),\;
-min\_epoch,\;
-max\_epoch
+candidate = operatorname{clamp}(
+operatorname{round}(scaled_target),;
+min_epoch,;
+max_epoch
 )
 ```
 
 Чтобы policy не дрожала на малом шуме, применяется hysteresis:
 
 ```latex
-\Delta = \frac{|candidate - current\_target|}{\max(1, current\_target)}
+Delta = frac{|candidate - current_target|}{max(1, current_target)}
 ```
 
 ```latex
-next\_target =
-\begin{cases}
-candidate, & \Delta > policy\_change\_threshold \\
-current\_target, & \text{иначе}
-\end{cases}
+next_target =
+begin{cases}
+candidate, & Delta > policy_change_threshold 
+current_target, & text{иначе}
+end{cases}
 ```
 
 ### Досрочное Закрытие Эпохи
@@ -111,7 +111,7 @@ Adaptive policy может закрыть эпоху раньше заполне
 Итоговое правило:
 
 ```latex
-should\_close = early\_close\_condition \lor (event\_count \ge next\_target)
+should_close = early_close_condition lor (event_count ge next_target)
 ```
 
 ## Rolling Anomaly Detection
@@ -128,7 +128,7 @@ should\_close = early\_close\_condition \lor (event\_count \ge next\_target)
 Новое значение считается аномалией, если:
 
 ```latex
-|value - \mu| > anomaly\_sigma\_threshold \cdot \sigma
+|value - mu| > anomaly_sigma_threshold cdot sigma
 ```
 
 Если `std` почти нулевое, любое ненулевое отклонение от среднего тоже считается аномалией.
@@ -154,7 +154,7 @@ should\_close = early\_close\_condition \lor (event\_count \ge next\_target)
 Смысл окна уязвимости:
 
 ```latex
-vulnerability\_window = commit\_time - event.arrival\_time
+vulnerability_window = commit_time - event.arrival_time
 ```
 
 ## Основные Параметры
