@@ -31,7 +31,7 @@ POLICY_LABELS = {
     "fixed-nominal": "Fixed-N",
     "fixed-large": "Fixed-L",
 }
-PRESENTATION_SCENARIOS = ["anomaly-spike", "storage-degradation", "queue-saturation"]
+PRESENTATION_SCENARIOS = ["anomaly-recovery", "storage-degradation", "queue-saturation"]
 
 
 def _apply_presentation_style() -> None:
@@ -49,6 +49,7 @@ def _apply_presentation_style() -> None:
 
 def _short_scenario_name(name: str) -> str:
     mapping = {
+        "anomaly-recovery": "anomaly",
         "anomaly-spike": "anomaly",
         "combined-stress": "combined",
         "critical-event-injection": "critical",
@@ -420,40 +421,45 @@ def build_presentation_plots(
     fig.savefig(output_dir / "cost_overview.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
 
-    # 3. Stress overview.
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6.0))
-    stress_metrics = [
-        ("safe_throughput", "Безопасная пропускная способность", "Событий в секунду"),
-        ("commit_frequency_at_safe_throughput", "Частота фиксаций", "Фиксаций в секунду"),
-        ("max_vulnerability_window", "Максимальное окно при safe throughput", "Секунды"),
-    ]
-    labels = [POLICY_LABELS[policy] for policy in POLICY_ORDER]
-    for ax, (metric_key, title, ylabel) in zip(axes, stress_metrics):
-        values = [stress_summary.get(policy, {}).get(metric_key, 0.0) for policy in POLICY_ORDER]
-        bars = ax.bar(labels, values, color=[POLICY_COLORS[policy] for policy in POLICY_ORDER], edgecolor="white")
-        _annotate_bars(ax, bars, values, skip_zero=True)
-        for bar, policy, value in zip(bars, POLICY_ORDER, values):
-            if value == 0.0 and policy in {"fixed-nominal", "fixed-large"}:
-                ax.text(
-                    bar.get_x() + bar.get_width() / 2,
-                    0.18,
-                    "SLA fail",
-                    ha="center",
-                    va="bottom",
-                    fontsize=9,
-                    rotation=90,
-                    color="#444444",
-                )
-        ax.set_title(title)
-        ax.set_ylabel(ylabel)
-        ax.grid(axis="y", alpha=0.2, linestyle="--")
-        ax.set_axisbelow(True)
-        if metric_key == "max_vulnerability_window":
-            ax.axhline(5.0, color="#444444", linestyle="--", linewidth=1.4)
-            ax.text(len(labels) - 0.45, 5.1, "SLA 5.0 c", ha="right", va="bottom", fontsize=10, color="#444444")
-    fig.suptitle("Stress-нагрузка: выдерживаемый режим и его цена", fontsize=18, y=1.02)
+    # 3. Stress summary table.
+    fig, ax = plt.subplots(figsize=(12.5, 3.8))
+    ax.axis("off")
+    headers = ["Политика", "Статус", "Safe throughput", "Max окно", "Частота фиксаций"]
+    body = []
+    for policy in POLICY_ORDER:
+        row = stress_summary.get(policy, {})
+        is_safe = row.get("safe_throughput", 0.0) > 0.0
+        body.append(
+            [
+                POLICY_LABELS[policy],
+                "Проходит SLA" if is_safe else "SLA fail",
+                f"{row.get('safe_throughput', 0.0):.2f}",
+                f"{row.get('max_vulnerability_window', 0.0):.2f}",
+                f"{row.get('commit_frequency_at_safe_throughput', 0.0):.2f}",
+            ]
+        )
+    table = ax.table(cellText=body, colLabels=headers, loc="center", cellLoc="center", colLoc="center")
+    table.auto_set_font_size(False)
+    table.set_fontsize(12)
+    table.scale(1.05, 2.0)
+    for (row_index, col_index), cell in table.get_celld().items():
+        if row_index == 0:
+            cell.set_facecolor("#e9eef5")
+            cell.set_text_props(weight="bold")
+        elif row_index == 1:
+            cell.set_facecolor("#d9edf7")
+        elif body[row_index - 1][1] == "SLA fail":
+            cell.set_facecolor("#f8d7da")
+        else:
+            cell.set_facecolor("#f8f9fa")
+        cell.set_edgecolor("#c7cdd6")
+    ax.set_title(
+        "Stress-тест: максимальный поток при ограничениях max window <= 5.0 c и queue <= 90% capacity",
+        fontsize=16,
+        pad=18,
+    )
     fig.tight_layout()
-    fig.savefig(output_dir / "stress_overview.png", dpi=180, bbox_inches="tight")
+    fig.savefig(output_dir / "stress_summary_table.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
 
     # 4. Dynamic adaptation timeline.
