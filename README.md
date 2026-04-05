@@ -25,9 +25,9 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 
 Для fixed policy размер эпохи задается заранее и не меняется в ходе прогона:
 
-```tex
+$$
 target_{\mathrm{fixed}} = \operatorname{clamp}(epoch\_size, min\_epoch, max\_epoch)
-```
+$$
 
 Эпоха закрывается, когда число событий в ней достигает `target_fixed`.
 
@@ -35,21 +35,21 @@ target_{\mathrm{fixed}} = \operatorname{clamp}(epoch\_size, min\_epoch, max\_epo
 
 Adaptive policy сначала оценивает базовый размер эпохи по интенсивности входного потока:
 
-```tex
+$$
 base\_target = \operatorname{round}(arrival\_rate \cdot target\_window)
-```
+$$
 
 Дальше этот размер модифицируется телеметрией:
 
-```tex
+$$
 scaled\_target = base\_target
-```
+$$
 
 Если подтверждение записи стало медленнее нормы:
 
-```tex
+$$
 scaled\_target \gets scaled\_target \cdot \left(
-1 + \min\left(
+$$ \min\left(
 \left(\frac{ack\_latency}{ack\_target} - 1\right) \cdot policy\_ack\_latency\_scale,\;
 policy\_ack\_latency\_cap
 \right)
@@ -75,9 +75,9 @@ if queue_fill > policy_queue_fill_trigger:
 
 После этого новый target ограничивается диапазоном:
 
-```tex
+$$
 candidate = \operatorname{clamp}(
-\operatorname{round}(scaled\_target),\;
+$$eratorname{round}(scaled\_target),\;
 min\_epoch,\;
 max\_epoch
 )
@@ -85,13 +85,13 @@ max\_epoch
 
 Чтобы policy не дрожала на малом шуме, применяется hysteresis:
 
-```tex
+$$
 \Delta = \frac{|candidate - current\_target|}{\max(1, current\_target)}
-```
+$$
 
-```tex
+$$
 next\_target =
-\begin{cases}
+$$gin{cases}
 candidate, & \Delta > policy\_change\_threshold \\
 current\_target, & \text{иначе}
 \end{cases}
@@ -110,9 +110,9 @@ Adaptive policy может закрыть эпоху раньше заполне
 
 Итоговое правило:
 
-```tex
+$$
 should\_close = early\_close\_condition \lor (event\_count \ge next\_target)
-```
+$$
 
 ## Rolling Anomaly Detection
 
@@ -127,9 +127,9 @@ should\_close = early\_close\_condition \lor (event\_count \ge next\_target)
 
 Новое значение считается аномалией, если:
 
-```tex
+$$
 |value - \mu| > anomaly\_sigma\_threshold \cdot \sigma
-```
+$$
 
 Если `std` почти нулевое, любое ненулевое отклонение от среднего тоже считается аномалией.
 
@@ -153,9 +153,9 @@ should\_close = early\_close\_condition \lor (event\_count \ge next\_target)
 
 Смысл окна уязвимости:
 
-```tex
+$$
 vulnerability\_window = commit\_time - event.arrival\_time
-```
+$$
 
 ## Основные Параметры
 
