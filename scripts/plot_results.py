@@ -15,6 +15,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 
 POLICY_ORDER = ["adaptive", "fixed-small", "fixed-nominal", "fixed-large"]
@@ -30,6 +31,7 @@ POLICY_LABELS = {
     "fixed-nominal": "Fixed-N",
     "fixed-large": "Fixed-L",
 }
+PRESENTATION_SCENARIOS = ["anomaly-spike", "storage-degradation", "queue-saturation"]
 
 
 def _apply_presentation_style() -> None:
@@ -47,6 +49,7 @@ def _apply_presentation_style() -> None:
 
 def _short_scenario_name(name: str) -> str:
     mapping = {
+        "anomaly-spike": "anomaly",
         "combined-stress": "combined",
         "critical-event-injection": "critical",
         "storage-degradation": "storage",
@@ -78,6 +81,42 @@ def _aggregate_batch_rows(rows: list[dict]) -> list[dict]:
         )
     summary.sort(key=lambda item: (item["scenario"], POLICY_ORDER.index(item["policy"])))
     return summary
+
+
+def _annotate_bars(ax: plt.Axes, bars, values: list[float], *, decimals: int = 2, skip_zero: bool = False) -> None:
+    max_height = max(values) if values else 0.0
+    offset = 0.03 if max_height <= 1.0 else max_height * 0.03
+    for bar, value in zip(bars, values):
+        if skip_zero and value == 0.0:
+            continue
+        text_y = value + offset if value > 0 else offset
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            text_y,
+            f"{value:.{decimals}f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+
+
+def _scenario_subset(rows: list[dict], scenarios: list[str]) -> list[dict]:
+    available = {row["scenario"] for row in rows}
+    selected = [scenario for scenario in scenarios if scenario in available]
+    return [row for row in rows if row["scenario"] in selected] if selected else rows
+
+
+def _build_legend_handles() -> list[Line2D]:
+    return [Line2D([0], [0], color=POLICY_COLORS[policy], lw=8, label=POLICY_LABELS[policy]) for policy in POLICY_ORDER]
+
+
+def _metric_values(rows: list[dict], scenarios: list[str], policy: str, metric_key: str) -> list[float]:
+    values = {(row["scenario"], row["policy"]): row[metric_key] for row in rows}
+    return [values.get((scenario, policy), 0.0) for scenario in scenarios]
+
+
+def _step_series(points: list[dict], metric_key: str) -> tuple[list[float], list[float]]:
+    return [point["time"] for point in points], [point[metric_key] for point in points]
 
 
 def _plot_grouped_bars(
@@ -299,6 +338,168 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     plt.close(fig)
 
 
+def build_presentation_plots(
+    batch_summary_path: Path,
+    stress_summary_path: Path,
+    adaptive_trace_path: Path,
+    fixed_trace_path: Path,
+    output_dir: Path,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _apply_presentation_style()
+
+    batch_rows = _scenario_subset(
+        _aggregate_batch_rows(json.loads(batch_summary_path.read_text(encoding="utf-8"))),
+        PRESENTATION_SCENARIOS,
+    )
+    stress_summary = json.loads(stress_summary_path.read_text(encoding="utf-8"))
+    adaptive_trace = json.loads(adaptive_trace_path.read_text(encoding="utf-8"))
+    fixed_trace = json.loads(fixed_trace_path.read_text(encoding="utf-8"))
+    scenarios = [scenario for scenario in PRESENTATION_SCENARIOS if any(row["scenario"] == scenario for row in batch_rows)]
+    width = 0.18
+    x_positions = list(range(len(scenarios)))
+    legend_handles = _build_legend_handles()
+
+    # 1. Security overview.
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharex=True)
+    for ax, metric_key, title, ylabel in [
+        (axes[0], "avg_vulnerability_window", "Среднее окно уязвимости", "Секунды"),
+        (axes[1], "max_vulnerability_window", "Максимальное окно уязвимости", "Секунды"),
+    ]:
+        for index, policy in enumerate(POLICY_ORDER):
+            offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
+            heights = _metric_values(batch_rows, scenarios, policy, metric_key)
+            bars = ax.bar(
+                offsets,
+                heights,
+                width=width,
+                color=POLICY_COLORS[policy],
+                edgecolor="white",
+                linewidth=0.8,
+            )
+            _annotate_bars(ax, bars, heights)
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios])
+        ax.grid(axis="y", alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+    fig.legend(handles=legend_handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.02))
+    fig.suptitle("Безопасность в переменных сценариях", fontsize=18, y=1.08)
+    fig.tight_layout()
+    fig.savefig(output_dir / "window_overview.png", dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+    # 2. Cost overview.
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharex=True)
+    for ax, metric_key, title, ylabel in [
+        (axes[0], "commit_frequency", "Частота фиксаций", "Фиксаций в секунду"),
+        (axes[1], "max_queue_depth", "Пиковая глубина очереди", "События"),
+    ]:
+        for index, policy in enumerate(POLICY_ORDER):
+            offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
+            heights = _metric_values(batch_rows, scenarios, policy, metric_key)
+            bars = ax.bar(
+                offsets,
+                heights,
+                width=width,
+                color=POLICY_COLORS[policy],
+                edgecolor="white",
+                linewidth=0.8,
+            )
+            _annotate_bars(ax, bars, heights)
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios])
+        ax.grid(axis="y", alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+    fig.legend(handles=legend_handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.02))
+    fig.suptitle("Цена достижения устойчивости", fontsize=18, y=1.08)
+    fig.tight_layout()
+    fig.savefig(output_dir / "cost_overview.png", dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+    # 3. Stress overview.
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6.0))
+    stress_metrics = [
+        ("safe_throughput", "Безопасная пропускная способность", "Событий в секунду"),
+        ("commit_frequency_at_safe_throughput", "Частота фиксаций", "Фиксаций в секунду"),
+        ("max_vulnerability_window", "Максимальное окно при safe throughput", "Секунды"),
+    ]
+    labels = [POLICY_LABELS[policy] for policy in POLICY_ORDER]
+    for ax, (metric_key, title, ylabel) in zip(axes, stress_metrics):
+        values = [stress_summary.get(policy, {}).get(metric_key, 0.0) for policy in POLICY_ORDER]
+        bars = ax.bar(labels, values, color=[POLICY_COLORS[policy] for policy in POLICY_ORDER], edgecolor="white")
+        _annotate_bars(ax, bars, values, skip_zero=True)
+        for bar, policy, value in zip(bars, POLICY_ORDER, values):
+            if value == 0.0 and policy in {"fixed-nominal", "fixed-large"}:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    0.18,
+                    "SLA fail",
+                    ha="center",
+                    va="bottom",
+                    fontsize=9,
+                    rotation=90,
+                    color="#444444",
+                )
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+        if metric_key == "max_vulnerability_window":
+            ax.axhline(5.0, color="#444444", linestyle="--", linewidth=1.4)
+            ax.text(len(labels) - 0.45, 5.1, "SLA 5.0 c", ha="right", va="bottom", fontsize=10, color="#444444")
+    fig.suptitle("Stress-нагрузка: выдерживаемый режим и его цена", fontsize=18, y=1.02)
+    fig.tight_layout()
+    fig.savefig(output_dir / "stress_overview.png", dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+    # 4. Dynamic adaptation timeline.
+    adaptive_points = adaptive_trace["points"]
+    fixed_points = fixed_trace["points"]
+    adaptive_times, adaptive_rates = _step_series(adaptive_points, "arrival_rate")
+    _, adaptive_ack = _step_series(adaptive_points, "ack_latency")
+    _, adaptive_queue = _step_series(adaptive_points, "queue_fill")
+    _, adaptive_targets = _step_series(adaptive_points, "next_target")
+    fixed_times, fixed_targets = _step_series(fixed_points, "next_target")
+    close_times = [point["time"] for point in adaptive_points if point["should_close"]]
+    close_targets = [point["next_target"] for point in adaptive_points if point["should_close"]]
+
+    fig, axes = plt.subplots(3, 1, figsize=(14, 9), sharex=True)
+    axes[0].step(adaptive_times, adaptive_rates, where="post", color="#2ca02c", linewidth=2.5, label="Входной поток")
+    ack_axis = axes[0].twinx()
+    ack_axis.step(adaptive_times, adaptive_ack, where="post", color="#9467bd", linewidth=2.0, label="Ack latency")
+    axes[0].set_ylabel("Событий/с")
+    ack_axis.set_ylabel("Ack, с")
+    axes[0].set_title("Адаптивная политика перестраивает размер эпохи по ходу сценария")
+    axes[0].grid(alpha=0.2, linestyle="--")
+    top_handles = [
+        Line2D([0], [0], color="#2ca02c", lw=2.5, label="Входной поток"),
+        Line2D([0], [0], color="#9467bd", lw=2.0, label="Ack latency"),
+    ]
+    axes[0].legend(handles=top_handles, frameon=False, loc="upper left")
+
+    axes[1].step(adaptive_times, adaptive_targets, where="post", color=POLICY_COLORS["adaptive"], linewidth=2.8, label="Adaptive")
+    axes[1].step(fixed_times, fixed_targets, where="post", color=POLICY_COLORS["fixed-small"], linewidth=2.4, label="Fixed-S")
+    if close_times:
+        axes[1].scatter(close_times, close_targets, color="#d62728", s=60, zorder=3, label="Закрытие эпохи")
+    axes[1].set_ylabel("Размер эпохи")
+    axes[1].grid(alpha=0.2, linestyle="--")
+    axes[1].legend(frameon=False, ncol=3, loc="upper left")
+
+    axes[2].step(adaptive_times, adaptive_queue, where="post", color="#ff7f0e", linewidth=2.4)
+    axes[2].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
+    axes[2].text(adaptive_times[-1], 0.92, "Порог early close", ha="right", va="bottom", fontsize=10, color="#444444")
+    axes[2].set_ylabel("Очередь")
+    axes[2].set_xlabel("Время, с")
+    axes[2].grid(alpha=0.2, linestyle="--")
+    fig.tight_layout()
+    fig.savefig(output_dir / "adaptation_timeline.png", dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build PNG plots from batch or stress summaries.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -315,16 +516,30 @@ def main(argv: list[str] | None = None) -> int:
     timeline_parser.add_argument("--summary", required=True)
     timeline_parser.add_argument("--output-dir", required=True)
 
+    presentation_parser = subparsers.add_parser("presentation")
+    presentation_parser.add_argument("--batch-summary", required=True)
+    presentation_parser.add_argument("--stress-summary", required=True)
+    presentation_parser.add_argument("--adaptive-trace", required=True)
+    presentation_parser.add_argument("--fixed-trace", required=True)
+    presentation_parser.add_argument("--output-dir", required=True)
+
     args = parser.parse_args(argv)
-    summary_path = Path(args.summary)
     output_dir = Path(args.output_dir)
 
     if args.command == "batch":
-        build_batch_plots(summary_path, output_dir)
+        build_batch_plots(Path(args.summary), output_dir)
     elif args.command == "stress":
-        build_stress_plots(summary_path, output_dir)
+        build_stress_plots(Path(args.summary), output_dir)
+    elif args.command == "timeline":
+        build_timeline_plots(Path(args.summary), output_dir)
     else:
-        build_timeline_plots(summary_path, output_dir)
+        build_presentation_plots(
+            batch_summary_path=Path(args.batch_summary),
+            stress_summary_path=Path(args.stress_summary),
+            adaptive_trace_path=Path(args.adaptive_trace),
+            fixed_trace_path=Path(args.fixed_trace),
+            output_dir=output_dir,
+        )
     return 0
 
 
