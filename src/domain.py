@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Tuple
+
+from settings import load_settings
 
 
 @dataclass(frozen=True)
@@ -39,9 +41,9 @@ class PolicyDecision:
 class ArrivalSegment:
     duration: float
     rate: float
-    ack_latency: float = 1.0
-    cpu_load: float = 0.2
-    queue_fill: float = 0.1
+    ack_latency: float = field(default_factory=lambda: load_settings().segment_ack_latency)
+    cpu_load: float = field(default_factory=lambda: load_settings().segment_cpu_load)
+    queue_fill: float = field(default_factory=lambda: load_settings().segment_queue_fill)
     critical_every: int = 0
 
 
@@ -52,9 +54,9 @@ class ScenarioConfig:
     queue_capacity: int
     target_window: float
     segments: Tuple[ArrivalSegment, ...]
-    telemetry_window_size: int = 5
-    anomaly_sigma_threshold: float = 3.0
-    criticality_threshold: float = 0.9
+    telemetry_window_size: int = field(default_factory=lambda: load_settings().telemetry_window_size)
+    anomaly_sigma_threshold: float = field(default_factory=lambda: load_settings().anomaly_sigma_threshold)
+    criticality_threshold: float = field(default_factory=lambda: load_settings().criticality_threshold)
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,6 @@
 import unittest
 
-from itmo_young_congress.crypto import (
+from crypto import (
     build_merkle_tree,
     compute_event_hmac,
     verify_merkle_proof,

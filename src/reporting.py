@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 from typing import Dict, List, Sequence
 
-from itmo_young_congress.domain import ScenarioConfig
-from itmo_young_congress.simulator import run_simulation
+from cli_common import make_policies
+from domain import ScenarioConfig
+from simulator import run_simulation
 
 
 def run_batch(
@@ -144,8 +145,6 @@ def run_stress_test(
     window_limit: float,
     queue_fill_limit: float,
 ) -> Dict[str, dict]:
-    from itmo_young_congress.cli import make_policies
-
     policies = make_policies(scenario)
     summary: Dict[str, dict] = {}
     queue_limit = scenario.queue_capacity * queue_fill_limit

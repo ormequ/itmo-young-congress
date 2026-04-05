@@ -9,7 +9,17 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
+py-modules = [
+  "itmo_young_congress",
+  "cli",
+  "cli_common",
+  "cli_demo",
+  "cli_tools",
+  "crypto",
+  "demo",
+  "domain",
+  "policies",
+  "reporting",
+  "settings",
+  "simulator",
+]

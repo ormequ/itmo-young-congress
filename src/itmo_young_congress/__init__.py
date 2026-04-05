@@ -1,1 +1,0 @@
-"""Adaptive Merkle epoch simulator."""

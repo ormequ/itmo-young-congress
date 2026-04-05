@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from itmo_young_congress.domain import ArrivalSegment, ScenarioConfig
-from itmo_young_congress.policies import AdaptiveEpochPolicy, FixedEpochPolicy
-from itmo_young_congress.reporting import build_report, run_batch
+from domain import ArrivalSegment, ScenarioConfig
+from policies import AdaptiveEpochPolicy, FixedEpochPolicy
+from reporting import build_report, run_batch
 
 
 class ReportingTests(unittest.TestCase):
@@ -23,7 +23,6 @@ class ReportingTests(unittest.TestCase):
                 target_window=2.0,
                 min_epoch=2,
                 max_epoch=12,
-                ema_alpha=0.2,
                 change_threshold=0.1,
                 ack_target=1.0,
             ),

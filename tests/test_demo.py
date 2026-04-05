@@ -1,8 +1,8 @@
 import asyncio
 import unittest
 
-from itmo_young_congress.demo import run_demo_gateway
-from itmo_young_congress.domain import ArrivalSegment, ScenarioConfig
+from demo import run_demo_gateway
+from domain import ArrivalSegment, ScenarioConfig
 
 
 class DemoTests(unittest.TestCase):

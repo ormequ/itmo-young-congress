@@ -6,8 +6,8 @@ import random
 import statistics
 from typing import List, Optional, Sequence
 
-from itmo_young_congress.crypto import build_merkle_tree
-from itmo_young_congress.domain import (
+from crypto import build_merkle_tree
+from domain import (
     CommitRecord,
     EpochState,
     Event,
@@ -16,9 +16,11 @@ from itmo_young_congress.domain import (
     SimulationResult,
     TelemetrySample,
 )
+from settings import load_settings
 
 
 def generate_events(scenario: ScenarioConfig, seed: int) -> List[Event]:
+    settings = load_settings()
     rng = random.Random(seed)
     events: List[Event] = []
     current_time = 0.0
@@ -42,8 +44,12 @@ def generate_events(scenario: ScenarioConfig, seed: int) -> List[Event]:
                     queue_fill=segment.queue_fill,
                     critical=critical,
                     arrival_rate=segment.rate,
-                    data_value=segment.rate,
-                    data_criticality=1.0 if critical else 0.1,
+                    data_value=segment.rate * settings.simulator_generated_data_value,
+                    data_criticality=(
+                        settings.simulator_generated_criticality_critical
+                        if critical
+                        else settings.simulator_generated_criticality_default
+                    ),
                 )
             )
             event_id += 1

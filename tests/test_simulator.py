@@ -1,8 +1,8 @@
 import unittest
 
-from itmo_young_congress.domain import ArrivalSegment, Event, ScenarioConfig
-from itmo_young_congress.policies import AdaptiveEpochPolicy, FixedEpochPolicy
-from itmo_young_congress.simulator import generate_events, run_simulation
+from domain import ArrivalSegment, Event, ScenarioConfig
+from policies import AdaptiveEpochPolicy, FixedEpochPolicy
+from simulator import generate_events, run_simulation
 
 
 class GeneratorTests(unittest.TestCase):
@@ -53,7 +53,6 @@ class SimulatorTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=12,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )
@@ -88,7 +87,6 @@ class SimulatorTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=12,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )
@@ -123,7 +121,6 @@ class SimulatorTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=12,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )

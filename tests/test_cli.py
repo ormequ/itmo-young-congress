@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from itmo_young_congress.cli import main
-from itmo_young_congress.crypto import build_merkle_tree
+from cli import main
+from crypto import build_merkle_tree
 
 
 class CliTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class CliTests(unittest.TestCase):
 
             exit_code = main(
                 [
-                    "run-scenario",
+                    "demo-run-scenario",
                     "--config",
                     str(config_path),
                     "--policy",
@@ -40,7 +40,7 @@ class CliTests(unittest.TestCase):
 
             exit_code = main(
                 [
-                    "run-batch",
+                    "demo-run-batch",
                     "--config",
                     str(config_path),
                     "--seeds",
@@ -54,7 +54,7 @@ class CliTests(unittest.TestCase):
 
             exit_code = main(
                 [
-                    "build-report",
+                    "demo-build-report",
                     "--summary",
                     str(tmp / "batch" / "batch_summary.json"),
                     "--output-dir",

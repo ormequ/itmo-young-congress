@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Dict, List
 
-from itmo_young_congress.domain import ScenarioConfig
-from itmo_young_congress.simulator import generate_events
+from domain import ScenarioConfig
+from simulator import generate_events
 
 
 async def run_demo_gateway(scenario: ScenarioConfig, seed: int = 1) -> Dict[str, int]:

@@ -1,7 +1,7 @@
 import unittest
 
-from itmo_young_congress.domain import EpochState, TelemetrySample
-from itmo_young_congress.policies import AdaptiveEpochPolicy, FixedEpochPolicy
+from domain import EpochState, TelemetrySample
+from policies import AdaptiveEpochPolicy, FixedEpochPolicy
 
 
 class FixedPolicyTests(unittest.TestCase):
@@ -26,7 +26,6 @@ class AdaptivePolicyTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=20,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )
@@ -42,7 +41,6 @@ class AdaptivePolicyTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=20,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )
@@ -58,7 +56,6 @@ class AdaptivePolicyTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=20,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )
@@ -76,7 +73,6 @@ class AdaptivePolicyTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=20,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )
@@ -94,7 +90,6 @@ class AdaptivePolicyTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=20,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )
@@ -118,7 +113,6 @@ class AdaptivePolicyTests(unittest.TestCase):
             target_window=2.0,
             min_epoch=2,
             max_epoch=20,
-            ema_alpha=0.2,
             change_threshold=0.1,
             ack_target=1.0,
         )
