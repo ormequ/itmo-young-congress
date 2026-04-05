@@ -13,7 +13,7 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-stress-test --config configs/
 PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/critical-event-injection.json --seed 2 --output artifacts/demo.json
 ```
 
-## Политики Эпох
+## Политики эпох
 
 Перед псевдокодом используются следующие обозначения:
 
@@ -35,7 +35,7 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 - `criticality_threshold` — порог, после которого данные считаются критичными.
 - `event_count` — число событий, уже накопленных в текущей эпохе.
 
-### Фиксированная Политика
+### Фиксированная политика
 
 Для фиксированной политики размер эпохи задается заранее и не меняется в ходе прогона:
 
@@ -45,7 +45,7 @@ target_fixed = epoch_size
 
 Эпоха закрывается, когда число событий в ней достигает `target_fixed`.
 
-### Адаптивная Политика
+### Адаптивная политика
 
 Адаптивная политика сначала оценивает базовый размер эпохи по интенсивности входного потока:
 
@@ -105,7 +105,7 @@ delta_ratio = abs(candidate - current_target) / max(1, current_target)
 next_target = candidate if delta_ratio > policy_change_threshold else current_target
 ```
 
-### Досрочное Закрытие Эпохи
+### Досрочное закрытие эпохи
 
 Адаптивная политика может закрыть эпоху раньше заполнения, если выполняется хотя бы одно условие:
 
@@ -122,7 +122,7 @@ next_target = candidate if delta_ratio > policy_change_threshold else current_ta
 should_close = early_close_condition or event_count >= next_target
 ```
 
-## Детектирование Аномалий По Скользящему Окну
+## Детектирование аномалий по скользящему окну
 
 Для `ack_latency`, `cpu_load`, `queue_fill` и `data_value` хранится окно последних `telemetry_window_size` значений.
 
@@ -165,7 +165,7 @@ abs(value - mean) > anomaly_sigma_threshold * std
 vulnerability_window = commit_time - event.arrival_time
 ```
 
-## Основные Параметры
+## Основные параметры
 
 Это верхнеуровневые параметры, которыми обычно имеет смысл управлять при исследовании.
 
@@ -181,7 +181,7 @@ vulnerability_window = commit_time - event.arrival_time
 | `IYC_POLICY_CHANGE_THRESHOLD` | `0.15` | минимальное относительное изменение `target` для перенастройки |
 | `IYC_POLICY_ACK_TARGET` | `1.0` | нормальная задержка подтверждения записи |
 
-## Дополнительные Параметры
+## Дополнительные параметры
 
 Это коэффициенты более низкого уровня. Обычно они нужны для тонкого тюнинга, а не для первого запуска.
 
@@ -204,7 +204,7 @@ vulnerability_window = commit_time - event.arrival_time
 | `IYC_SIMULATOR_CRITICALITY_DEFAULT` | `0.1` | критичность обычного синтетического события |
 | `IYC_SIMULATOR_CRITICALITY_CRITICAL` | `1.0` | критичность синтетического критичного события |
 
-## Пример Ограничений
+## Пример ограничений
 
 Пусть текущий поток равен `5` событий в секунду.
 
@@ -224,7 +224,7 @@ vulnerability_window = commit_time - event.arrival_time
 
 То есть policy сможет выбрать только размер эпохи от `10` до `30` событий.
 
-## Значения По Умолчанию
+## Значения по умолчанию
 
 Значения по умолчанию подобраны с приоритетом безопасности.
 
