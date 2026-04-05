@@ -17,16 +17,16 @@ class StressTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "IYC_TELEMETRY_WINDOW_SIZE": "11",
-                "IYC_ANOMALY_SIGMA_THRESHOLD": "1.8",
+                "IYC_MIN_EPOCH_EVENTS": "4",
+                "IYC_MAX_WINDOW_SECONDS": "6.5",
                 "IYC_POLICY_ACK_TARGET": "1.4",
             },
             clear=False,
         ):
             settings = load_settings()
 
-        self.assertEqual(settings.telemetry_window_size, 11)
-        self.assertEqual(settings.anomaly_sigma_threshold, 1.8)
+        self.assertEqual(settings.min_epoch_events, 4)
+        self.assertEqual(settings.max_window_seconds, 6.5)
         self.assertEqual(settings.policy_ack_target, 1.4)
 
     def test_load_scenario_reads_extended_threshold_fields(self) -> None:

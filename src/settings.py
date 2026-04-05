@@ -22,10 +22,13 @@ class Settings:
     telemetry_window_size: int
     anomaly_sigma_threshold: float
     criticality_threshold: float
-    # Core epoch-sizing controls shared by adaptive and fixed policies.
-    policy_min_epoch: int
-    policy_max_epoch_floor: int
-    policy_max_epoch_multiplier: int
+    # Optional lower/upper bounds for epoch size in number of events.
+    min_epoch_events: int
+    max_epoch_events: float
+    # Optional lower/upper bounds for open-window duration in seconds.
+    min_window_seconds: float
+    max_window_seconds: float
+    # Core adaptive-policy controls.
     policy_change_threshold: float
     policy_ack_target: float
     # Scaling factors for adaptive reaction to degraded storage latency.
@@ -57,10 +60,12 @@ def load_settings() -> Settings:
         telemetry_window_size=_env_int("IYC_TELEMETRY_WINDOW_SIZE", 5),
         anomaly_sigma_threshold=_env_float("IYC_ANOMALY_SIGMA_THRESHOLD", 3.0),
         criticality_threshold=_env_float("IYC_CRITICALITY_THRESHOLD", 0.95),
-        # Epoch-sizing defaults for policy factory.
-        policy_min_epoch=_env_int("IYC_POLICY_MIN_EPOCH", 2),
-        policy_max_epoch_floor=_env_int("IYC_POLICY_MAX_EPOCH_FLOOR", 8),
-        policy_max_epoch_multiplier=_env_int("IYC_POLICY_MAX_EPOCH_MULTIPLIER", 4),
+        # Optional epoch constraints; default values keep them effectively disabled.
+        min_epoch_events=_env_int("IYC_MIN_EPOCH_EVENTS", 0),
+        max_epoch_events=_env_float("IYC_MAX_EPOCH_EVENTS", float("inf")),
+        min_window_seconds=_env_float("IYC_MIN_WINDOW_SECONDS", 0.0),
+        max_window_seconds=_env_float("IYC_MAX_WINDOW_SECONDS", float("inf")),
+        # Core adaptive-policy defaults.
         policy_change_threshold=_env_float("IYC_POLICY_CHANGE_THRESHOLD", 0.15),
         policy_ack_target=_env_float("IYC_POLICY_ACK_TARGET", 1.0),
         # Storage-latency adjustment coefficients.

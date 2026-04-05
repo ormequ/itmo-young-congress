@@ -34,7 +34,13 @@ class SimulatorTests(unittest.TestCase):
             Event(1, 0.0, b"a", 2.0, 0.2, 0.1, False, 3.0),
             Event(2, 0.2, b"b", 2.0, 0.2, 0.1, False, 3.0),
         ]
-        policy = FixedEpochPolicy(epoch_size=2, min_epoch=1, max_epoch=10)
+        policy = FixedEpochPolicy(
+            epoch_size=2,
+            min_epoch_events=1,
+            max_epoch_events=10,
+            min_window_seconds=0.0,
+            max_window_seconds=float("inf"),
+        )
 
         result = run_simulation(scenario, policy, events=events)
 
@@ -51,12 +57,20 @@ class SimulatorTests(unittest.TestCase):
         )
         adaptive = AdaptiveEpochPolicy(
             target_window=2.0,
-            min_epoch=2,
-            max_epoch=12,
+            min_epoch_events=2,
+            max_epoch_events=12,
+            min_window_seconds=0.0,
+            max_window_seconds=float("inf"),
             change_threshold=0.1,
             ack_target=1.0,
         )
-        fixed = FixedEpochPolicy(epoch_size=10, min_epoch=2, max_epoch=12)
+        fixed = FixedEpochPolicy(
+            epoch_size=10,
+            min_epoch_events=2,
+            max_epoch_events=12,
+            min_window_seconds=0.0,
+            max_window_seconds=float("inf"),
+        )
 
         events = [
             Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 5.0),
@@ -85,12 +99,20 @@ class SimulatorTests(unittest.TestCase):
         )
         adaptive = AdaptiveEpochPolicy(
             target_window=2.0,
-            min_epoch=2,
-            max_epoch=12,
+            min_epoch_events=2,
+            max_epoch_events=12,
+            min_window_seconds=0.0,
+            max_window_seconds=float("inf"),
             change_threshold=0.1,
             ack_target=1.0,
         )
-        fixed = FixedEpochPolicy(epoch_size=10, min_epoch=2, max_epoch=12)
+        fixed = FixedEpochPolicy(
+            epoch_size=10,
+            min_epoch_events=2,
+            max_epoch_events=12,
+            min_window_seconds=0.0,
+            max_window_seconds=float("inf"),
+        )
         events = [
             Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 5.0, 1.0, 0.1),
             Event(2, 0.2, b"b", 1.0, 0.2, 0.1, False, 5.0, 1.0, 0.1),
@@ -119,12 +141,20 @@ class SimulatorTests(unittest.TestCase):
         )
         adaptive = AdaptiveEpochPolicy(
             target_window=2.0,
-            min_epoch=2,
-            max_epoch=12,
+            min_epoch_events=2,
+            max_epoch_events=12,
+            min_window_seconds=0.0,
+            max_window_seconds=float("inf"),
             change_threshold=0.1,
             ack_target=1.0,
         )
-        fixed_small = FixedEpochPolicy(epoch_size=2, min_epoch=2, max_epoch=12)
+        fixed_small = FixedEpochPolicy(
+            epoch_size=2,
+            min_epoch_events=2,
+            max_epoch_events=12,
+            min_window_seconds=0.0,
+            max_window_seconds=float("inf"),
+        )
         events = [
             Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 6.0, 1.0, 0.1),
             Event(2, 0.1, b"b", 1.0, 0.2, 0.1, False, 6.0, 1.0, 0.1),
