@@ -1,0 +1,66 @@
+{
+  "name": "stress-response",
+  "duration": 9.6,
+  "queue_capacity": 24,
+  "target_window": 2.0,
+  "telemetry_window_size": 4,
+  "anomaly_sigma_threshold": 2.0,
+  "segments": [
+    {
+      "duration": 1.2,
+      "rate": 4.0,
+      "ack_latency": 1.0,
+      "cpu_load": 0.25,
+      "queue_fill": 0.20
+    },
+    {
+      "duration": 1.2,
+      "rate": 8.0,
+      "ack_latency": 1.1,
+      "cpu_load": 0.45,
+      "queue_fill": 0.35
+    },
+    {
+      "duration": 1.2,
+      "rate": 6.0,
+      "ack_latency": 1.0,
+      "cpu_load": 0.35,
+      "queue_fill": 0.28
+    },
+    {
+      "duration": 1.2,
+      "rate": 11.0,
+      "ack_latency": 2.8,
+      "cpu_load": 0.94,
+      "queue_fill": 0.92
+    },
+    {
+      "duration": 1.2,
+      "rate": 7.0,
+      "ack_latency": 1.5,
+      "cpu_load": 0.62,
+      "queue_fill": 0.55
+    },
+    {
+      "duration": 1.2,
+      "rate": 3.5,
+      "ack_latency": 1.0,
+      "cpu_load": 0.22,
+      "queue_fill": 0.22
+    },
+    {
+      "duration": 1.2,
+      "rate": 9.0,
+      "ack_latency": 2.3,
+      "cpu_load": 0.78,
+      "queue_fill": 0.84
+    },
+    {
+      "duration": 1.2,
+      "rate": 5.0,
+      "ack_latency": 1.2,
+      "cpu_load": 0.40,
+      "queue_fill": 0.40
+    }
+  ]
+}

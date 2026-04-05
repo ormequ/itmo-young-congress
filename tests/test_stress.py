@@ -6,7 +6,7 @@ from pathlib import Path
 from cli import main
 from cli_common import load_scenario
 from domain import ArrivalSegment, ScenarioConfig
-from reporting import run_stress_test
+from reporting import run_stress_capacity, run_stress_response, run_stress_test
 
 
 class StressTests(unittest.TestCase):
@@ -60,6 +60,55 @@ class StressTests(unittest.TestCase):
         self.assertIn("commit_frequency_at_safe_throughput", summary["fixed-small"])
         self.assertIn("passes_constraints", summary["fixed-large"])
         self.assertIn("signature_time_per_second_at_safe_throughput", summary["adaptive"])
+
+    def test_stress_response_returns_trace_per_policy(self) -> None:
+        scenario = ScenarioConfig(
+            name="response",
+            duration=6.0,
+            queue_capacity=16,
+            target_window=2.0,
+            telemetry_window_size=3,
+            anomaly_sigma_threshold=2.5,
+            criticality_threshold=0.9,
+            segments=(
+                ArrivalSegment(duration=2.0, rate=4.0, ack_latency=1.0, queue_fill=0.2),
+                ArrivalSegment(duration=2.0, rate=8.0, ack_latency=2.0, queue_fill=0.8),
+                ArrivalSegment(duration=2.0, rate=5.0, ack_latency=1.2, queue_fill=0.3),
+            ),
+        )
+
+        payload = run_stress_response(scenario=scenario, policies=["adaptive", "fixed-small"], seed=2)
+
+        self.assertEqual(payload["scenario"], "response")
+        self.assertIn("adaptive", payload["policies"])
+        self.assertIn("fixed-small", payload["policies"])
+        self.assertTrue(payload["policies"]["adaptive"])
+        self.assertIn("next_target", payload["policies"]["adaptive"][0])
+
+    def test_stress_capacity_returns_curve_points_for_all_policies(self) -> None:
+        scenario = ScenarioConfig(
+            name="capacity",
+            duration=6.0,
+            queue_capacity=16,
+            target_window=2.0,
+            telemetry_window_size=3,
+            anomaly_sigma_threshold=2.5,
+            criticality_threshold=0.9,
+            segments=(ArrivalSegment(duration=6.0, rate=4.0, ack_latency=1.0),),
+        )
+
+        payload = run_stress_capacity(
+            scenario=scenario,
+            arrival_rates=[2.0, 4.0, 6.0],
+            seeds=[1, 2],
+            policies=["adaptive", "fixed-small", "fixed-nominal", "fixed-large"],
+        )
+
+        self.assertEqual(payload["scenario"], "capacity")
+        self.assertEqual(payload["arrival_rates"], [2.0, 4.0, 6.0])
+        self.assertIn("adaptive", payload["curves"])
+        self.assertEqual(len(payload["curves"]["adaptive"]), 3)
+        self.assertIn("max_vulnerability_window", payload["curves"]["adaptive"][0])
 
     def test_cli_stress_test_command_writes_summary(self) -> None:
         payload = {

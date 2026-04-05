@@ -7,7 +7,7 @@ from typing import Dict, List, Sequence
 
 from cli_common import make_policies
 from domain import ScenarioConfig
-from simulator import run_simulation
+from simulator import run_simulation, run_simulation_trace
 
 
 def run_batch(
@@ -203,3 +203,59 @@ def run_stress_test(
         }
 
     return summary
+
+
+def run_stress_response(
+    scenario: ScenarioConfig,
+    policies: Sequence[str],
+    seed: int,
+) -> Dict[str, object]:
+    available = make_policies(scenario)
+    traces = {
+        policy_name: run_simulation_trace(scenario, available[policy_name], seed=seed)
+        for policy_name in policies
+    }
+    return {
+        "scenario": scenario.name,
+        "seed": seed,
+        "policies": traces,
+    }
+
+
+def run_stress_capacity(
+    scenario: ScenarioConfig,
+    arrival_rates: Sequence[float],
+    seeds: Sequence[int],
+    policies: Sequence[str],
+) -> Dict[str, object]:
+    available = make_policies(scenario)
+    curves: Dict[str, List[dict]] = {}
+
+    for policy_name in policies:
+        policy = available[policy_name]
+        points: List[dict] = []
+        for rate in arrival_rates:
+            stress_scenario = _scenario_with_rate(scenario, rate)
+            results = [run_simulation(stress_scenario, policy, seed=seed) for seed in seeds]
+            points.append(
+                {
+                    "arrival_rate": rate,
+                    "avg_vulnerability_window": sum(result.metrics.avg_vulnerability_window for result in results)
+                    / len(results),
+                    "max_vulnerability_window": max(result.metrics.max_vulnerability_window for result in results),
+                    "commit_frequency": sum(result.metrics.commit_frequency for result in results) / len(results),
+                    "max_queue_depth": max(result.metrics.max_queue_depth for result in results),
+                    "avg_proof_bytes": sum(result.metrics.avg_proof_bytes for result in results) / len(results),
+                    "signature_time_per_second": sum(
+                        result.metrics.signature_time_per_second for result in results
+                    )
+                    / len(results),
+                }
+            )
+        curves[policy_name] = points
+
+    return {
+        "scenario": scenario.name,
+        "arrival_rates": list(arrival_rates),
+        "curves": curves,
+    }

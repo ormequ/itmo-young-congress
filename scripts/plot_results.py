@@ -339,6 +339,102 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     plt.close(fig)
 
 
+def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    traces = payload["policies"]
+    _apply_presentation_style()
+
+    reference_policy = next(iter(traces))
+    reference_points = traces[reference_policy]
+    times = [point["time"] for point in reference_points]
+
+    fig, axes = plt.subplots(3, 1, figsize=(14, 9), sharex=True)
+    axes[0].step(times, [point["arrival_rate"] for point in reference_points], where="post", linewidth=2.5, color="#2ca02c")
+    ack_axis = axes[0].twinx()
+    ack_axis.step(times, [point["ack_latency"] for point in reference_points], where="post", linewidth=2.0, color="#9467bd")
+    axes[0].set_title("Stress-response: как adaptive меняет режим работы под давлением среды")
+    axes[0].set_ylabel("Поток, evt/s")
+    ack_axis.set_ylabel("Ack, с")
+    axes[0].legend(
+        handles=[
+            Line2D([0], [0], color="#2ca02c", lw=2.5, label="Входной поток"),
+            Line2D([0], [0], color="#9467bd", lw=2.0, label="Ack latency"),
+        ],
+        frameon=False,
+        loc="upper left",
+    )
+
+    response_policy_order = ["adaptive", "fixed-small", "fixed-nominal"]
+    for policy in response_policy_order:
+        if policy not in traces:
+            continue
+        points = traces[policy]
+        policy_times = [point["time"] for point in points]
+        axes[1].step(
+            policy_times,
+            [point["next_target"] for point in points],
+            where="post",
+            linewidth=2.4,
+            color=POLICY_COLORS[policy],
+            label=POLICY_LABELS[policy],
+        )
+
+    axes[1].set_ylabel("Размер эпохи")
+    axes[1].legend(frameon=False, ncol=3, loc="upper left")
+
+    axes[2].step(times, [point["queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
+    axes[2].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
+    axes[2].text(times[-1], 0.92, "Порог early close", ha="right", va="bottom", fontsize=10, color="#444444")
+    axes[2].set_ylabel("Очередь")
+    axes[2].set_xlabel("Время, с")
+
+    for ax in axes:
+        ax.grid(alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    curves = payload["curves"]
+    _apply_presentation_style()
+
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6.2), sharex=True)
+    metrics = [
+        ("max_vulnerability_window", "Максимальное окно уязвимости", "Секунды"),
+        ("signature_time_per_second", "Крипто-время в секунду", "Секунды/с"),
+    ]
+
+    for ax, (metric_key, title, ylabel) in zip(axes, metrics):
+        for policy in POLICY_ORDER:
+            if policy not in curves:
+                continue
+            points = curves[policy]
+            x_values = [point["arrival_rate"] for point in points]
+            y_values = [point[metric_key] for point in points]
+            ax.plot(
+                x_values,
+                y_values,
+                marker="o",
+                linewidth=2.4,
+                markersize=6,
+                color=POLICY_COLORS[policy],
+                label=POLICY_LABELS[policy],
+            )
+        ax.set_title(title)
+        ax.set_xlabel("Входной поток, evt/s")
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+    axes[0].legend(frameon=False, ncol=2, loc="upper left")
+    fig.suptitle("Stress-capacity: деградация качества при росте нагрузки", fontsize=18, y=1.02)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
 def build_presentation_plots(
     batch_summary_path: Path,
     stress_summary_path: Path,
@@ -424,7 +520,7 @@ def build_presentation_plots(
     # 3. Stress summary table.
     fig, ax = plt.subplots(figsize=(12.5, 3.8))
     ax.axis("off")
-    headers = ["Политика", "Статус", "Safe throughput", "Max окно", "Частота фиксаций", "Крипто-время/с"]
+    headers = ["Политика", "Достигнутый поток", "Max окно", "Частота фиксаций", "Крипто-время/с"]
     body = []
     for policy in POLICY_ORDER:
         row = stress_summary.get(policy, {})
@@ -432,8 +528,7 @@ def build_presentation_plots(
         body.append(
             [
                 POLICY_LABELS[policy],
-                "Проходит ограничения" if is_safe else "Не проходит ограничения",
-                f"{row.get('safe_throughput', 0.0):.2f}" if is_safe else "—",
+                f"{row.get('safe_throughput', 0.0):.2f}" if is_safe else "не удерживает верхний уровень",
                 f"{row.get('max_vulnerability_window', 0.0):.2f}" if is_safe else "—",
                 f"{row.get('commit_frequency_at_safe_throughput', 0.0):.2f}" if is_safe else "—",
                 f"{row.get('signature_time_per_second_at_safe_throughput', 0.0):.2f}" if is_safe else "—",
@@ -449,13 +544,13 @@ def build_presentation_plots(
             cell.set_text_props(weight="bold")
         elif row_index == 1:
             cell.set_facecolor("#d9edf7")
-        elif body[row_index - 1][1] == "Не проходит ограничения":
+        elif body[row_index - 1][1] == "не удерживает верхний уровень":
             cell.set_facecolor("#f8d7da")
         else:
             cell.set_facecolor("#f8f9fa")
         cell.set_edgecolor("#c7cdd6")
     ax.set_title(
-        "Stress-тест: max window <= 5.0 c, queue <= 90% capacity, commit frequency <= 2.0",
+        "Итоги stress-сценария",
         fontsize=16,
         pad=18,
     )
@@ -523,6 +618,14 @@ def main(argv: list[str] | None = None) -> int:
     timeline_parser.add_argument("--summary", required=True)
     timeline_parser.add_argument("--output-dir", required=True)
 
+    response_parser = subparsers.add_parser("stress-response")
+    response_parser.add_argument("--summary", required=True)
+    response_parser.add_argument("--output", required=True)
+
+    capacity_parser = subparsers.add_parser("stress-capacity")
+    capacity_parser.add_argument("--summary", required=True)
+    capacity_parser.add_argument("--output", required=True)
+
     presentation_parser = subparsers.add_parser("presentation")
     presentation_parser.add_argument("--batch-summary", required=True)
     presentation_parser.add_argument("--stress-summary", required=True)
@@ -531,21 +634,23 @@ def main(argv: list[str] | None = None) -> int:
     presentation_parser.add_argument("--output-dir", required=True)
 
     args = parser.parse_args(argv)
-    output_dir = Path(args.output_dir)
-
     if args.command == "batch":
-        build_batch_plots(Path(args.summary), output_dir)
+        build_batch_plots(Path(args.summary), Path(args.output_dir))
     elif args.command == "stress":
-        build_stress_plots(Path(args.summary), output_dir)
+        build_stress_plots(Path(args.summary), Path(args.output_dir))
     elif args.command == "timeline":
-        build_timeline_plots(Path(args.summary), output_dir)
+        build_timeline_plots(Path(args.summary), Path(args.output_dir))
+    elif args.command == "stress-response":
+        build_stress_response_plot(Path(args.summary), Path(args.output))
+    elif args.command == "stress-capacity":
+        build_stress_capacity_plot(Path(args.summary), Path(args.output))
     else:
         build_presentation_plots(
             batch_summary_path=Path(args.batch_summary),
             stress_summary_path=Path(args.stress_summary),
             adaptive_trace_path=Path(args.adaptive_trace),
             fixed_trace_path=Path(args.fixed_trace),
-            output_dir=output_dir,
+            output_dir=Path(args.output_dir),
         )
     return 0
 
