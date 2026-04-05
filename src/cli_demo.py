@@ -10,7 +10,9 @@ from reporting import build_report, run_batch, run_stress_test
 from simulator import run_simulation, simulation_to_json
 
 
+# Default SLA for demo stress runs: maximum allowed vulnerability window.
 DEFAULT_DEMO_STRESS_WINDOW_LIMIT = 5.0
+# Default SLA for demo stress runs: allowed queue occupancy as a capacity fraction.
 DEFAULT_DEMO_STRESS_QUEUE_FILL_LIMIT = 0.9
 
 
