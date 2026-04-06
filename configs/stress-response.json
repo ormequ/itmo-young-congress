@@ -1,66 +1,45 @@
 {
   "name": "stress-response",
-  "duration": 24.0,
+  "duration": 25.0,
   "queue_capacity": 56,
   "target_window": 2.0,
   "telemetry_window_size": 4,
   "anomaly_sigma_threshold": 2.0,
   "segments": [
     {
-      "duration": 3.0,
+      "duration": 5.0,
       "rate": 5.0,
       "ack_latency": 1.0,
       "cpu_load": 0.25,
       "queue_fill": 0.20
     },
     {
-      "duration": 3.0,
-      "rate": 12.0,
-      "ack_latency": 1.2,
-      "cpu_load": 0.50,
+      "duration": 5.0,
+      "rate": 14.0,
+      "ack_latency": 1.1,
+      "cpu_load": 0.52,
+      "queue_fill": 0.34
+    },
+    {
+      "duration": 5.0,
+      "rate": 9.0,
+      "ack_latency": 2.6,
+      "cpu_load": 0.62,
       "queue_fill": 0.38
     },
     {
-      "duration": 3.0,
-      "rate": 7.0,
-      "ack_latency": 1.0,
-      "cpu_load": 0.36,
-      "queue_fill": 0.26
-    },
-    {
-      "duration": 3.0,
-      "rate": 18.0,
-      "ack_latency": 3.2,
-      "cpu_load": 0.95,
-      "queue_fill": 0.94
-    },
-    {
-      "duration": 3.0,
+      "duration": 5.0,
       "rate": 10.0,
-      "ack_latency": 1.9,
-      "cpu_load": 0.66,
-      "queue_fill": 0.58
+      "ack_latency": 1.3,
+      "cpu_load": 0.68,
+      "queue_fill": 0.90
     },
     {
-      "duration": 3.0,
-      "rate": 4.5,
+      "duration": 5.0,
+      "rate": 5.0,
       "ack_latency": 1.0,
       "cpu_load": 0.22,
       "queue_fill": 0.22
-    },
-    {
-      "duration": 3.0,
-      "rate": 16.0,
-      "ack_latency": 2.8,
-      "cpu_load": 0.82,
-      "queue_fill": 0.88
-    },
-    {
-      "duration": 3.0,
-      "rate": 6.0,
-      "ack_latency": 1.3,
-      "cpu_load": 0.42,
-      "queue_fill": 0.42
     }
   ]
 }
