@@ -31,6 +31,7 @@ def run_batch(
                         "max_vulnerability_window": result.metrics.max_vulnerability_window,
                         "commit_frequency": result.metrics.commit_frequency,
                         "max_queue_depth": result.metrics.max_queue_depth,
+                        "p95_queue_depth": result.metrics.p95_queue_depth,
                         "throughput": result.metrics.throughput,
                         "avg_proof_bytes": result.metrics.avg_proof_bytes,
                         "signature_time_per_second": result.metrics.signature_time_per_second,
@@ -58,6 +59,7 @@ def _aggregate(rows: Sequence[dict]) -> List[dict]:
                 "max_vulnerability_window": max(item["max_vulnerability_window"] for item in group),
                 "commit_frequency": sum(item["commit_frequency"] for item in group) / count,
                 "max_queue_depth": max(item["max_queue_depth"] for item in group),
+                "p95_queue_depth": sum(item["p95_queue_depth"] for item in group) / count,
                 "throughput": sum(item["throughput"] for item in group) / count,
                 "avg_proof_bytes": sum(item["avg_proof_bytes"] for item in group) / count,
                 "signature_time_per_second": sum(item["signature_time_per_second"] for item in group) / count,
@@ -80,13 +82,13 @@ def build_report(summary_path: Path, report_dir: Path) -> Path:
 
     md_path = report_dir / "summary.md"
     md_lines = [
-        "| scenario | policy | avg_window | max_window | commit_frequency | max_queue_depth | throughput | avg_proof_bytes | signature_time_per_second |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| scenario | policy | avg_window | max_window | commit_frequency | max_queue_depth | p95_queue_depth | throughput | avg_proof_bytes | signature_time_per_second |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary:
         md_lines.append(
             "| {scenario} | {policy} | {avg_vulnerability_window:.3f} | {max_vulnerability_window:.3f} | "
-            "{commit_frequency:.3f} | {max_queue_depth} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
+            "{commit_frequency:.3f} | {max_queue_depth} | {p95_queue_depth:.3f} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
             "{signature_time_per_second:.3f} |".format(
                 **row
             )

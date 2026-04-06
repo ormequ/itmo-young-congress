@@ -26,12 +26,12 @@ POLICY_COLORS = {
     "fixed-large": "#d62728",
 }
 POLICY_LABELS = {
-    "adaptive": "Adaptive",
-    "fixed-small": "Fixed-S",
-    "fixed-nominal": "Fixed-N",
-    "fixed-large": "Fixed-L",
+    "adaptive": "Адаптивная",
+    "fixed-small": "Фикс-малая",
+    "fixed-nominal": "Фикс-номинальная",
+    "fixed-large": "Фикс-большая",
 }
-PRESENTATION_SCENARIOS = ["anomaly-recovery", "storage-degradation", "queue-saturation"]
+PRESENTATION_SCENARIOS = ["critical-event-injection", "storage-degradation", "queue-saturation"]
 
 
 def _apply_presentation_style() -> None:
@@ -49,13 +49,15 @@ def _apply_presentation_style() -> None:
 
 def _short_scenario_name(name: str) -> str:
     mapping = {
-        "anomaly-recovery": "anomaly",
-        "anomaly-spike": "anomaly",
-        "combined-stress": "combined",
-        "critical-event-injection": "critical",
-        "storage-degradation": "storage",
-        "queue-saturation": "queue",
-        "cpu-pressure": "cpu",
+        "anomaly-recovery": "аномалия",
+        "anomaly-spike": "аномалия",
+        "combined-stress": "комбинированный",
+        "critical-event-injection": "аномальные события",
+        "storage-degradation": "деградация хранилища",
+        "queue-saturation": "насыщение очереди",
+        "cpu-pressure": "давление CPU",
+        "burst": "всплеск нагрузки",
+        "steady": "стационарный режим",
     }
     return mapping.get(name, name)
 
@@ -77,7 +79,10 @@ def _aggregate_batch_rows(rows: list[dict]) -> list[dict]:
                 "max_vulnerability_window": max(item["max_vulnerability_window"] for item in group),
                 "commit_frequency": sum(item["commit_frequency"] for item in group) / count,
                 "max_queue_depth": max(item["max_queue_depth"] for item in group),
+                "p95_queue_depth": sum(item.get("p95_queue_depth", 0.0) for item in group) / count,
                 "avg_proof_bytes": sum(item["avg_proof_bytes"] for item in group) / count,
+                "signature_time_per_second": sum(item.get("signature_time_per_second", 0.0) for item in group)
+                / count,
             }
         )
     summary.sort(key=lambda item: (item["scenario"], POLICY_ORDER.index(item["policy"])))
@@ -195,7 +200,6 @@ def _plot_grouped_bars(
                 rotation=90 if len(scenarios) > 4 else 0,
             )
 
-    ax.set_title(title)
     ax.set_ylabel(ylabel)
     ax.set_xticks(x_positions)
     ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios], rotation=15, ha="right")
@@ -226,7 +230,6 @@ def _plot_tradeoff(rows: list[dict], output_path: Path) -> None:
                 textcoords="offset points",
             )
 
-    ax.set_title("Компромисс: частота фиксаций и окно уязвимости")
     ax.set_xlabel("Частота фиксаций")
     ax.set_ylabel("Среднее окно уязвимости")
     ax.legend(frameon=False)
@@ -264,8 +267,8 @@ def build_batch_plots(summary_path: Path, output_dir: Path) -> None:
     )
     _plot_grouped_bars(
         summary,
-        "max_queue_depth",
-        "Максимальная глубина очереди",
+        "p95_queue_depth",
+        "95-й перцентиль глубины очереди",
         "События",
         output_dir / "max_queue_depth.png",
     )
@@ -295,7 +298,6 @@ def build_stress_plots(summary_path: Path, output_dir: Path) -> None:
         for bar, height in zip(bars, heights):
             text_y = height + max(max_height * 0.03, 0.03) if height > 0 else 0.03
             ax.text(bar.get_x() + bar.get_width() / 2, text_y, f"{height:.2f}", ha="center", va="bottom", fontsize=10)
-        ax.set_title(title)
         ax.set_ylabel(ylabel)
         ax.grid(axis="y", alpha=0.2, linestyle="--")
         ax.set_axisbelow(True)
@@ -342,7 +344,6 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     ax.step(times, next_targets, where="post", color=POLICY_COLORS["adaptive"], linewidth=2.5, label="Target эпохи")
     if close_times:
         ax.scatter(close_times, close_targets, color="#d62728", s=70, zorder=3, label="Закрытие эпохи")
-    ax.set_title(f"Перестройка размера эпохи во времени: {payload['scenario']}")
     ax.set_xlabel("Время, с")
     ax.set_ylabel("Целевой размер эпохи, событий")
     ax.grid(alpha=0.2, linestyle="--")
@@ -354,7 +355,6 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     fig, axes = plt.subplots(3, 1, figsize=(11, 8), sharex=True)
     axes[0].step(times, arrival_rates, where="post", color="#2ca02c", linewidth=2.0)
     axes[0].set_ylabel("Поток, evt/s")
-    axes[0].set_title(f"Изменение условий во времени: {payload['scenario']}")
     axes[0].grid(alpha=0.2, linestyle="--")
 
     axes[1].step(times, queue_fill, where="post", color="#ff7f0e", linewidth=2.0)
@@ -386,13 +386,12 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
     axes[0].step(times, [point["arrival_rate"] for point in reference_points], where="post", linewidth=2.5, color="#2ca02c")
     ack_axis = axes[0].twinx()
     ack_axis.step(times, [point["ack_latency"] for point in reference_points], where="post", linewidth=2.0, color="#9467bd")
-    axes[0].set_title("Stress-response: как adaptive меняет режим работы под давлением среды", pad=16)
-    axes[0].set_ylabel("Поток, evt/s")
-    ack_axis.set_ylabel("Ack, с")
+    axes[0].set_ylabel("Поток, событий/с")
+    ack_axis.set_ylabel("Подтв., с")
     axes[0].legend(
         handles=[
             Line2D([0], [0], color="#2ca02c", lw=2.5, label="Входной поток"),
-            Line2D([0], [0], color="#9467bd", lw=2.0, label="Ack latency"),
+            Line2D([0], [0], color="#9467bd", lw=2.0, label="Задержка подтверждения"),
         ],
         frameon=False,
         loc="upper left",
@@ -437,7 +436,7 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
 
     axes[2].step(times, [point["queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
     axes[2].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
-    axes[2].text(times[-1], 0.92, "Порог early close", ha="right", va="bottom", fontsize=10, color="#444444")
+    axes[2].text(times[-1], 0.92, "Порог раннего закрытия", ha="right", va="bottom", fontsize=10, color="#444444")
     axes[2].set_ylabel("Очередь")
     axes[2].set_xlabel("Время, с")
 
@@ -456,8 +455,8 @@ def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.2), sharex=True)
     metrics = [
-        ("commit_frequency", "Частота фиксаций", "Фиксаций в секунду"),
-        ("signature_time_per_second", "Крипто-время в секунду", "Секунды/с"),
+        ("avg_vulnerability_window", "", "Среднее окно уязвимости, с"),
+        ("commit_frequency", "", "Фиксаций в секунду"),
     ]
 
     for ax, (metric_key, title, ylabel) in zip(axes, metrics):
@@ -476,13 +475,11 @@ def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
                 color=POLICY_COLORS[policy],
                 label=POLICY_LABELS[policy],
             )
-        ax.set_title(title)
-        ax.set_xlabel("Входной поток, evt/s")
+        ax.set_xlabel("Входной поток, событий/с")
         ax.set_ylabel(ylabel)
         ax.grid(alpha=0.2, linestyle="--")
         ax.set_axisbelow(True)
     axes[0].legend(frameon=False, ncol=2, loc="upper left")
-    fig.suptitle("Stress-capacity: цена устойчивости при росте нагрузки", fontsize=18, y=1.02)
     fig.tight_layout()
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -504,15 +501,14 @@ def build_stress_summary_table(summary_path: Path, output_path: Path) -> None:
                 f"{point['arrival_rate']:.0f}",
                 f"{point['avg_vulnerability_window']:.2f}",
                 f"{point['commit_frequency']:.2f}",
-                f"{point['signature_time_per_second']:.3f}",
             ]
         )
 
-    fig, ax = plt.subplots(figsize=(11.5, 3.6))
+    fig, ax = plt.subplots(figsize=(10.5, 3.6))
     ax.axis("off")
     table = ax.table(
         cellText=rows,
-        colLabels=["Политика", "Поток", "Avg окно", "Фиксации/с", "Крипто-время/с"],
+        colLabels=["Политика", "Поток", "Среднее окно", "Фиксации/с"],
         loc="center",
         cellLoc="center",
         colLoc="center",
@@ -529,7 +525,6 @@ def build_stress_summary_table(summary_path: Path, output_path: Path) -> None:
         else:
             cell.set_facecolor("#f8f9fa")
         cell.set_edgecolor("#c7cdd6")
-    ax.set_title("Итоги при максимальном уровне нагрузки", fontsize=16, pad=16)
     fig.tight_layout()
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -558,31 +553,25 @@ def build_presentation_plots(
     legend_handles = _build_legend_handles()
 
     # 1. Security overview.
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharex=True)
-    for ax, metric_key, title, ylabel in [
-        (axes[0], "avg_vulnerability_window", "Среднее окно уязвимости", "Секунды"),
-        (axes[1], "max_vulnerability_window", "Максимальное окно уязвимости", "Секунды"),
-    ]:
-        for index, policy in enumerate(POLICY_ORDER):
-            offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
-            heights = _metric_values(batch_rows, scenarios, policy, metric_key)
-            bars = ax.bar(
-                offsets,
-                heights,
-                width=width,
-                color=POLICY_COLORS[policy],
-                edgecolor="white",
-                linewidth=0.8,
-            )
-            _annotate_bars(ax, bars, heights)
-        ax.set_title(title)
-        ax.set_ylabel(ylabel)
-        ax.set_xticks(x_positions)
-        ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios])
-        ax.grid(axis="y", alpha=0.2, linestyle="--")
-        ax.set_axisbelow(True)
+    fig, ax = plt.subplots(1, 1, figsize=(12, 6.5), sharex=True)
+    for index, policy in enumerate(POLICY_ORDER):
+        offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
+        heights = _metric_values(batch_rows, scenarios, policy, "avg_vulnerability_window")
+        bars = ax.bar(
+            offsets,
+            heights,
+            width=width,
+            color=POLICY_COLORS[policy],
+            edgecolor="white",
+            linewidth=0.8,
+        )
+        _annotate_bars(ax, bars, heights)
+    ax.set_ylabel("Среднее окно уязвимости, с")
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios])
+    ax.grid(axis="y", alpha=0.2, linestyle="--")
+    ax.set_axisbelow(True)
     fig.legend(handles=legend_handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.02))
-    fig.suptitle("Безопасность в переменных сценариях", fontsize=18, y=1.08)
     fig.tight_layout()
     fig.savefig(output_dir / "window_overview.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -590,8 +579,8 @@ def build_presentation_plots(
     # 2. Cost overview.
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharex=True)
     for ax, metric_key, title, ylabel in [
-        (axes[0], "commit_frequency", "Частота фиксаций", "Фиксаций в секунду"),
-        (axes[1], "max_queue_depth", "Пиковая глубина очереди", "События"),
+        (axes[0], "commit_frequency", "", "Фиксаций в секунду"),
+        (axes[1], "p95_queue_depth", "", "Очередь (p95), событий"),
     ]:
         for index, policy in enumerate(POLICY_ORDER):
             offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
@@ -605,14 +594,12 @@ def build_presentation_plots(
                 linewidth=0.8,
             )
             _annotate_bars(ax, bars, heights)
-        ax.set_title(title)
         ax.set_ylabel(ylabel)
         ax.set_xticks(x_positions)
         ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios])
         ax.grid(axis="y", alpha=0.2, linestyle="--")
         ax.set_axisbelow(True)
     fig.legend(handles=legend_handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.02))
-    fig.suptitle("Цена достижения устойчивости", fontsize=18, y=1.08)
     fig.tight_layout()
     fig.savefig(output_dir / "cost_overview.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -620,7 +607,7 @@ def build_presentation_plots(
     # 3. Stress summary table.
     fig, ax = plt.subplots(figsize=(12.5, 3.8))
     ax.axis("off")
-    headers = ["Политика", "Достигнутый поток", "Max окно", "Частота фиксаций", "Крипто-время/с"]
+    headers = ["Политика", "Достигнутый поток", "Макс. окно", "Фиксаций/с"]
     body = []
     for policy in POLICY_ORDER:
         row = stress_summary.get(policy, {})
@@ -628,10 +615,9 @@ def build_presentation_plots(
         body.append(
             [
                 POLICY_LABELS[policy],
-                f"{row.get('safe_throughput', 0.0):.2f}" if is_safe else "не удерживает верхний уровень",
+                f"{row.get('safe_throughput', 0.0):.2f}" if is_safe else "не выдерживает максимум",
                 f"{row.get('max_vulnerability_window', 0.0):.2f}" if is_safe else "—",
                 f"{row.get('commit_frequency_at_safe_throughput', 0.0):.2f}" if is_safe else "—",
-                f"{row.get('signature_time_per_second_at_safe_throughput', 0.0):.2f}" if is_safe else "—",
             ]
         )
     table = ax.table(cellText=body, colLabels=headers, loc="center", cellLoc="center", colLoc="center")
@@ -644,16 +630,11 @@ def build_presentation_plots(
             cell.set_text_props(weight="bold")
         elif row_index == 1:
             cell.set_facecolor("#d9edf7")
-        elif body[row_index - 1][1] == "не удерживает верхний уровень":
+        elif body[row_index - 1][1] == "не выдерживает максимум":
             cell.set_facecolor("#f8d7da")
         else:
             cell.set_facecolor("#f8f9fa")
         cell.set_edgecolor("#c7cdd6")
-    ax.set_title(
-        "Итоги stress-сценария",
-        fontsize=16,
-        pad=18,
-    )
     fig.tight_layout()
     fig.savefig(output_dir / "stress_summary_table.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -675,11 +656,10 @@ def build_presentation_plots(
     ack_axis.step(adaptive_times, adaptive_ack, where="post", color="#9467bd", linewidth=2.0, label="Ack latency")
     axes[0].set_ylabel("Событий/с")
     ack_axis.set_ylabel("Ack, с")
-    axes[0].set_title("Адаптивная политика перестраивает размер эпохи по ходу сценария")
     axes[0].grid(alpha=0.2, linestyle="--")
     top_handles = [
         Line2D([0], [0], color="#2ca02c", lw=2.5, label="Входной поток"),
-        Line2D([0], [0], color="#9467bd", lw=2.0, label="Ack latency"),
+        Line2D([0], [0], color="#9467bd", lw=2.0, label="Задержка подтверждения"),
     ]
     axes[0].legend(handles=top_handles, frameon=False, loc="upper left")
 

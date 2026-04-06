@@ -16,6 +16,13 @@ def _load_plot_module():
 
 
 class PlotResultsTests(unittest.TestCase):
+    def test_display_mappings_use_russian_labels(self) -> None:
+        plot_results = _load_plot_module()
+        self.assertEqual(plot_results._short_scenario_name("storage-degradation"), "деградация хранилища")
+        self.assertEqual(plot_results._short_scenario_name("queue-saturation"), "насыщение очереди")
+        self.assertEqual(plot_results.POLICY_LABELS["adaptive"], "Адаптивная")
+        self.assertEqual(plot_results.POLICY_LABELS["fixed-small"], "Фикс-малая")
+
     def test_build_batch_plots_writes_png_files(self) -> None:
         plot_results = _load_plot_module()
         rows = [
@@ -27,6 +34,7 @@ class PlotResultsTests(unittest.TestCase):
                 "max_vulnerability_window": 2.0,
                 "commit_frequency": 0.5,
                 "max_queue_depth": 5,
+                "p95_queue_depth": 4.0,
                 "throughput": 4.0,
                 "avg_proof_bytes": 64.0,
             },
@@ -38,6 +46,7 @@ class PlotResultsTests(unittest.TestCase):
                 "max_vulnerability_window": 2.5,
                 "commit_frequency": 0.4,
                 "max_queue_depth": 8,
+                "p95_queue_depth": 6.0,
                 "throughput": 4.0,
                 "avg_proof_bytes": 96.0,
             },

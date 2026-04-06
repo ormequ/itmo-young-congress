@@ -10,7 +10,7 @@
       "ack_latency": 1.0,
       "cpu_load": 0.25,
       "queue_fill": 0.2,
-      "critical_every": 6
+      "critical_every": 4
     }
   ]
 }
