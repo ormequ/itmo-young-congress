@@ -90,6 +90,9 @@ class StressTests(unittest.TestCase):
         self.assertIn("adaptive", payload["window_points"])
         self.assertTrue(payload["window_points"]["adaptive"])
         self.assertIn("max_window", payload["window_points"]["adaptive"][0])
+        adaptive_closes = [point for point in payload["policies"]["adaptive"] if point["should_close"]]
+        self.assertTrue(adaptive_closes)
+        self.assertTrue(all(point["event_count"] >= point["next_target"] for point in adaptive_closes))
 
     def test_stress_capacity_returns_curve_points_for_all_policies(self) -> None:
         scenario = ScenarioConfig(

@@ -375,14 +375,13 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
     traces = payload["policies"]
     phases = payload.get("phases", [])
-    window_points = payload.get("window_points", {})
     _apply_presentation_style()
 
     reference_policy = next(iter(traces))
     reference_points = traces[reference_policy]
     times = [point["time"] for point in reference_points]
 
-    fig, axes = plt.subplots(4, 1, figsize=(14, 11.5), sharex=True)
+    fig, axes = plt.subplots(3, 1, figsize=(14, 8.8), sharex=True)
     _shade_phases(list(axes), phases)
     axes[0].step(times, [point["arrival_rate"] for point in reference_points], where="post", linewidth=2.5, color="#2ca02c")
     ack_axis = axes[0].twinx()
@@ -417,27 +416,30 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
     axes[1].set_ylabel("Размер эпохи")
     axes[1].legend(frameon=False, ncol=4, loc="upper left")
 
+    close_markers_added = False
     for policy in response_policy_order:
-        if policy not in window_points:
+        if policy not in traces:
             continue
-        points = window_points[policy]
-        axes[2].plot(
-            [point["time"] for point in points],
-            [point["avg_window"] for point in points],
-            marker="o",
-            linewidth=2.2,
-            markersize=3.8,
-            color=POLICY_COLORS[policy],
-            label=POLICY_LABELS[policy],
-        )
-    axes[2].set_ylabel("Avg окно, с")
-    axes[2].legend(frameon=False, ncol=4, loc="upper left")
+        points = traces[policy]
+        close_times = [point["time"] for point in points if point["should_close"]]
+        close_targets = [point["next_target"] for point in points if point["should_close"]]
+        if close_times:
+            axes[1].scatter(
+                close_times,
+                close_targets,
+                color=POLICY_COLORS[policy],
+                s=26,
+                alpha=0.8,
+                zorder=3,
+                label=f"{POLICY_LABELS[policy]} close" if not close_markers_added else None,
+            )
+            close_markers_added = True
 
-    axes[3].step(times, [point["queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
-    axes[3].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
-    axes[3].text(times[-1], 0.92, "Порог early close", ha="right", va="bottom", fontsize=10, color="#444444")
-    axes[3].set_ylabel("Очередь")
-    axes[3].set_xlabel("Время, с")
+    axes[2].step(times, [point["queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
+    axes[2].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
+    axes[2].text(times[-1], 0.92, "Порог early close", ha="right", va="bottom", fontsize=10, color="#444444")
+    axes[2].set_ylabel("Очередь")
+    axes[2].set_xlabel("Время, с")
 
     for ax in axes:
         ax.grid(alpha=0.2, linestyle="--")

@@ -141,6 +141,14 @@ def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig
     )
 
 
+def _stress_policies(scenario: ScenarioConfig) -> Dict[str, object]:
+    policies = make_policies(scenario)
+    for policy_name, policy in list(policies.items()):
+        if policy_name.startswith("adaptive") and hasattr(policy, "use_early_close"):
+            policies[policy_name] = type(policy)(**{**policy.__dict__, "use_early_close": False})
+    return policies
+
+
 def _phase_payload(scenario: ScenarioConfig) -> List[dict]:
     phases: List[dict] = []
     current_time = 0.0
@@ -187,7 +195,7 @@ def run_stress_test(
     queue_fill_limit: float,
     commit_frequency_limit: float = float("inf"),
 ) -> Dict[str, dict]:
-    policies = make_policies(scenario)
+    policies = _stress_policies(scenario)
     summary: Dict[str, dict] = {}
     queue_limit = scenario.queue_capacity * queue_fill_limit
 
@@ -248,7 +256,7 @@ def run_stress_response(
     policies: Sequence[str],
     seed: int,
 ) -> Dict[str, object]:
-    available = make_policies(scenario)
+    available = _stress_policies(scenario)
     events = generate_events(scenario, seed)
     traces: Dict[str, List[dict]] = {}
     window_points: Dict[str, List[dict]] = {}
@@ -272,7 +280,7 @@ def run_stress_capacity(
     seeds: Sequence[int],
     policies: Sequence[str],
 ) -> Dict[str, object]:
-    available = make_policies(scenario)
+    available = _stress_policies(scenario)
     curves: Dict[str, List[dict]] = {}
 
     for policy_name in policies:
