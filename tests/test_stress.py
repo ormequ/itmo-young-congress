@@ -84,6 +84,12 @@ class StressTests(unittest.TestCase):
         self.assertIn("fixed-small", payload["policies"])
         self.assertTrue(payload["policies"]["adaptive"])
         self.assertIn("next_target", payload["policies"]["adaptive"][0])
+        self.assertEqual(len(payload["phases"]), 3)
+        self.assertEqual(payload["phases"][0]["start"], 0.0)
+        self.assertIn("window_points", payload)
+        self.assertIn("adaptive", payload["window_points"])
+        self.assertTrue(payload["window_points"]["adaptive"])
+        self.assertIn("max_window", payload["window_points"]["adaptive"][0])
 
     def test_stress_capacity_returns_curve_points_for_all_policies(self) -> None:
         scenario = ScenarioConfig(

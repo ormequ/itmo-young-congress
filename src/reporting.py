@@ -7,7 +7,7 @@ from typing import Dict, List, Sequence
 
 from cli_common import make_policies
 from domain import ScenarioConfig
-from simulator import run_simulation, run_simulation_trace
+from simulator import generate_events, run_simulation, run_simulation_trace
 
 
 def run_batch(
@@ -141,6 +141,44 @@ def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig
     )
 
 
+def _phase_payload(scenario: ScenarioConfig) -> List[dict]:
+    phases: List[dict] = []
+    current_time = 0.0
+    for index, segment in enumerate(scenario.segments, start=1):
+        start = current_time
+        end = min(scenario.duration, current_time + segment.duration)
+        phases.append(
+            {
+                "index": index,
+                "start": start,
+                "end": end,
+                "rate": segment.rate,
+                "ack_latency": segment.ack_latency,
+                "queue_fill": segment.queue_fill,
+            }
+        )
+        current_time = end
+        if current_time >= scenario.duration:
+            break
+    return phases
+
+
+def _commit_window_points(result, events) -> List[dict]:
+    event_by_id = {event.event_id: event for event in events}
+    points: List[dict] = []
+    for commit in result.commits:
+        windows = [commit.commit_time - event_by_id[event_id].arrival_time for event_id in commit.event_ids]
+        points.append(
+            {
+                "time": commit.commit_time,
+                "avg_window": sum(windows) / len(windows),
+                "max_window": max(windows),
+                "event_count": len(commit.event_ids),
+            }
+        )
+    return points
+
+
 def run_stress_test(
     scenario: ScenarioConfig,
     arrival_rates: Sequence[float],
@@ -211,14 +249,20 @@ def run_stress_response(
     seed: int,
 ) -> Dict[str, object]:
     available = make_policies(scenario)
-    traces = {
-        policy_name: run_simulation_trace(scenario, available[policy_name], seed=seed)
-        for policy_name in policies
-    }
+    events = generate_events(scenario, seed)
+    traces: Dict[str, List[dict]] = {}
+    window_points: Dict[str, List[dict]] = {}
+    for policy_name in policies:
+        policy = available[policy_name]
+        traces[policy_name] = run_simulation_trace(scenario, policy, seed=seed, events=events)
+        result = run_simulation(scenario, policy, seed=seed, events=events)
+        window_points[policy_name] = _commit_window_points(result, events)
     return {
         "scenario": scenario.name,
         "seed": seed,
+        "phases": _phase_payload(scenario),
         "policies": traces,
+        "window_points": window_points,
     }
 
 

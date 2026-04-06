@@ -120,6 +120,38 @@ def _step_series(points: list[dict], metric_key: str) -> tuple[list[float], list
     return [point["time"] for point in points], [point[metric_key] for point in points]
 
 
+def _phase_label(phase: dict) -> str:
+    if phase["queue_fill"] >= 0.9 or phase["ack_latency"] >= 2.5:
+        return "Крит."
+    if phase["rate"] >= 14:
+        return "Пик"
+    if phase["rate"] <= 6 and phase["ack_latency"] <= 1.1:
+        return "Восст."
+    return "Переход"
+
+
+def _shade_phases(axes: list[plt.Axes], phases: list[dict]) -> None:
+    if not phases:
+        return
+    colors = ["#f8fbff", "#f5f7fa"]
+    for index, phase in enumerate(phases):
+        color = colors[index % len(colors)]
+        for ax in axes:
+            ax.axvspan(phase["start"], phase["end"], color=color, alpha=0.35, zorder=0)
+        center = (phase["start"] + phase["end"]) / 2
+        axes[0].text(
+            center,
+            0.96,
+            _phase_label(phase),
+            transform=axes[0].get_xaxis_transform(),
+            ha="center",
+            va="top",
+            fontsize=9,
+            color="#55606f",
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8, "pad": 1.2},
+        )
+
+
 def _plot_grouped_bars(
     rows: list[dict],
     metric_key: str,
@@ -342,17 +374,20 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
 def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
     traces = payload["policies"]
+    phases = payload.get("phases", [])
+    window_points = payload.get("window_points", {})
     _apply_presentation_style()
 
     reference_policy = next(iter(traces))
     reference_points = traces[reference_policy]
     times = [point["time"] for point in reference_points]
 
-    fig, axes = plt.subplots(3, 1, figsize=(14, 9), sharex=True)
+    fig, axes = plt.subplots(4, 1, figsize=(14, 11.5), sharex=True)
+    _shade_phases(list(axes), phases)
     axes[0].step(times, [point["arrival_rate"] for point in reference_points], where="post", linewidth=2.5, color="#2ca02c")
     ack_axis = axes[0].twinx()
     ack_axis.step(times, [point["ack_latency"] for point in reference_points], where="post", linewidth=2.0, color="#9467bd")
-    axes[0].set_title("Stress-response: как adaptive меняет режим работы под давлением среды")
+    axes[0].set_title("Stress-response: как adaptive меняет режим работы под давлением среды", pad=16)
     axes[0].set_ylabel("Поток, evt/s")
     ack_axis.set_ylabel("Ack, с")
     axes[0].legend(
@@ -364,7 +399,7 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
         loc="upper left",
     )
 
-    response_policy_order = ["adaptive", "fixed-small", "fixed-nominal"]
+    response_policy_order = ["adaptive", "fixed-small", "fixed-nominal", "fixed-large"]
     for policy in response_policy_order:
         if policy not in traces:
             continue
@@ -380,13 +415,29 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
         )
 
     axes[1].set_ylabel("Размер эпохи")
-    axes[1].legend(frameon=False, ncol=3, loc="upper left")
+    axes[1].legend(frameon=False, ncol=4, loc="upper left")
 
-    axes[2].step(times, [point["queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
-    axes[2].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
-    axes[2].text(times[-1], 0.92, "Порог early close", ha="right", va="bottom", fontsize=10, color="#444444")
-    axes[2].set_ylabel("Очередь")
-    axes[2].set_xlabel("Время, с")
+    for policy in response_policy_order:
+        if policy not in window_points:
+            continue
+        points = window_points[policy]
+        axes[2].plot(
+            [point["time"] for point in points],
+            [point["avg_window"] for point in points],
+            marker="o",
+            linewidth=2.2,
+            markersize=3.8,
+            color=POLICY_COLORS[policy],
+            label=POLICY_LABELS[policy],
+        )
+    axes[2].set_ylabel("Avg окно, с")
+    axes[2].legend(frameon=False, ncol=4, loc="upper left")
+
+    axes[3].step(times, [point["queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
+    axes[3].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
+    axes[3].text(times[-1], 0.92, "Порог early close", ha="right", va="bottom", fontsize=10, color="#444444")
+    axes[3].set_ylabel("Очередь")
+    axes[3].set_xlabel("Время, с")
 
     for ax in axes:
         ax.grid(alpha=0.2, linestyle="--")
@@ -430,6 +481,53 @@ def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
         ax.set_axisbelow(True)
     axes[0].legend(frameon=False, ncol=2, loc="upper left")
     fig.suptitle("Stress-capacity: цена устойчивости при росте нагрузки", fontsize=18, y=1.02)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def build_stress_summary_table(summary_path: Path, output_path: Path) -> None:
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    curves = payload["curves"]
+    _apply_presentation_style()
+
+    rows = []
+    for policy in POLICY_ORDER:
+        if policy not in curves or not curves[policy]:
+            continue
+        point = curves[policy][-1]
+        rows.append(
+            [
+                POLICY_LABELS[policy],
+                f"{point['arrival_rate']:.0f}",
+                f"{point['avg_vulnerability_window']:.2f}",
+                f"{point['commit_frequency']:.2f}",
+                f"{point['signature_time_per_second']:.3f}",
+            ]
+        )
+
+    fig, ax = plt.subplots(figsize=(11.5, 3.6))
+    ax.axis("off")
+    table = ax.table(
+        cellText=rows,
+        colLabels=["Политика", "Поток", "Avg окно", "Фиксации/с", "Крипто-время/с"],
+        loc="center",
+        cellLoc="center",
+        colLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(12)
+    table.scale(1.0, 1.85)
+    for (row_index, _), cell in table.get_celld().items():
+        if row_index == 0:
+            cell.set_facecolor("#e9eef5")
+            cell.set_text_props(weight="bold")
+        elif row_index == 1:
+            cell.set_facecolor("#d9edf7")
+        else:
+            cell.set_facecolor("#f8f9fa")
+        cell.set_edgecolor("#c7cdd6")
+    ax.set_title("Итоги при максимальном уровне нагрузки", fontsize=16, pad=16)
     fig.tight_layout()
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -626,6 +724,10 @@ def main(argv: list[str] | None = None) -> int:
     capacity_parser.add_argument("--summary", required=True)
     capacity_parser.add_argument("--output", required=True)
 
+    summary_table_parser = subparsers.add_parser("stress-summary-table")
+    summary_table_parser.add_argument("--summary", required=True)
+    summary_table_parser.add_argument("--output", required=True)
+
     presentation_parser = subparsers.add_parser("presentation")
     presentation_parser.add_argument("--batch-summary", required=True)
     presentation_parser.add_argument("--stress-summary", required=True)
@@ -644,6 +746,8 @@ def main(argv: list[str] | None = None) -> int:
         build_stress_response_plot(Path(args.summary), Path(args.output))
     elif args.command == "stress-capacity":
         build_stress_capacity_plot(Path(args.summary), Path(args.output))
+    elif args.command == "stress-summary-table":
+        build_stress_summary_table(Path(args.summary), Path(args.output))
     else:
         build_presentation_plots(
             batch_summary_path=Path(args.batch_summary),
