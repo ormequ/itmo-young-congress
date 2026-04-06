@@ -1,26 +1,47 @@
 {
   "name": "burst",
-  "duration": 12.0,
-  "queue_capacity": 32,
+  "duration": 24.0,
+  "queue_capacity": 48,
   "target_window": 2.0,
   "segments": [
     {
       "duration": 4.0,
-      "rate": 4.0,
+      "rate": 5.0,
       "ack_latency": 1.0,
       "cpu_load": 0.25,
       "queue_fill": 0.2
     },
     {
       "duration": 4.0,
-      "rate": 10.0,
-      "ack_latency": 1.0,
-      "cpu_load": 0.55,
-      "queue_fill": 0.45
+      "rate": 14.0,
+      "ack_latency": 1.2,
+      "cpu_load": 0.60,
+      "queue_fill": 0.48
     },
     {
       "duration": 4.0,
-      "rate": 4.0,
+      "rate": 7.0,
+      "ack_latency": 1.1,
+      "cpu_load": 0.34,
+      "queue_fill": 0.24
+    },
+    {
+      "duration": 4.0,
+      "rate": 18.0,
+      "ack_latency": 2.2,
+      "cpu_load": 0.78,
+      "queue_fill": 0.78
+    },
+    {
+      "duration": 4.0,
+      "rate": 8.0,
+      "ack_latency": 1.2,
+      "cpu_load": 0.40,
+      "queue_fill": 0.28
+    },
+    {
+      "duration": 4.0,
+      "rate": 5.0,
       "ack_latency": 1.0,
       "cpu_load": 0.25,
       "queue_fill": 0.2

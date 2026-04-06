@@ -403,7 +403,7 @@ def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.2), sharex=True)
     metrics = [
-        ("max_vulnerability_window", "Максимальное окно уязвимости", "Секунды"),
+        ("commit_frequency", "Частота фиксаций", "Фиксаций в секунду"),
         ("signature_time_per_second", "Крипто-время в секунду", "Секунды/с"),
     ]
 
@@ -429,7 +429,7 @@ def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
         ax.grid(alpha=0.2, linestyle="--")
         ax.set_axisbelow(True)
     axes[0].legend(frameon=False, ncol=2, loc="upper left")
-    fig.suptitle("Stress-capacity: деградация качества при росте нагрузки", fontsize=18, y=1.02)
+    fig.suptitle("Stress-capacity: цена устойчивости при росте нагрузки", fontsize=18, y=1.02)
     fig.tight_layout()
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
