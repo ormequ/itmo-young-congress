@@ -82,7 +82,6 @@ class AdaptiveEpochPolicy:
             or (self.use_early_close and telemetry.data_criticality >= self.criticality_threshold)
             or (self.use_early_close and telemetry.queue_fill >= settings.policy_queue_close_threshold)
             or (self.use_early_close and telemetry.cpu_load >= settings.policy_cpu_close_threshold)
-            or (self.use_early_close and telemetry.ack_latency >= settings.policy_ack_close_multiplier * self.ack_target)
             or state.event_count >= next_target
         )
         return PolicyDecision(next_target=next_target, should_close=should_close)

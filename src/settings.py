@@ -43,7 +43,6 @@ class Settings:
     policy_queue_fill_min_scale: float
     policy_queue_close_threshold: float
     policy_cpu_close_threshold: float
-    policy_ack_close_multiplier: float
     # Generated event defaults for synthetic data value and criticality labels.
     simulator_generated_data_value: float
     simulator_generated_criticality_default: float
@@ -80,7 +79,6 @@ def load_settings() -> Settings:
         policy_queue_fill_min_scale=_env_float("POLICY_QUEUE_FILL_MIN_SCALE", 0.25),
         policy_queue_close_threshold=_env_float("POLICY_QUEUE_CLOSE_THRESHOLD", 0.9),
         policy_cpu_close_threshold=_env_float("POLICY_CPU_CLOSE_THRESHOLD", 0.95),
-        policy_ack_close_multiplier=_env_float("POLICY_ACK_CLOSE_MULTIPLIER", 2.5),
         # Synthetic event payload defaults used by the simulator.
         simulator_generated_data_value=_env_float("SIMULATOR_DATA_VALUE", 1.0),
         simulator_generated_criticality_default=_env_float("SIMULATOR_CRITICALITY_DEFAULT", 0.1),

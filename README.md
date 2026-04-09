@@ -114,7 +114,6 @@ next_target = candidate if delta_ratio > policy_change_threshold else current_ta
 - `data_criticality >= criticality_threshold`;
 - `queue_fill >= policy_queue_close_threshold`;
 - `cpu_load >= policy_cpu_close_threshold`;
-- `ack_latency >= policy_ack_close_multiplier * ack_target`.
 
 Итоговое правило:
 
@@ -196,7 +195,6 @@ vulnerability_window = commit_time - event.arrival_time
 | `POLICY_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высокой очереди |
 | `POLICY_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
 | `POLICY_CPU_CLOSE_THRESHOLD` | `0.95` | жесткий порог раннего закрытия по CPU |
-| `POLICY_ACK_CLOSE_MULTIPLIER` | `2.5` | жесткий порог раннего закрытия по `ack_latency` |
 | `SEGMENT_ACK_LATENCY` | `1.0` | значение `ack_latency` по умолчанию для сегмента без явного поля |
 | `SEGMENT_CPU_LOAD` | `0.2` | значение `cpu_load` по умолчанию для сегмента без явного поля |
 | `SEGMENT_QUEUE_FILL` | `0.1` | значение `queue_fill` по умолчанию для сегмента без явного поля |

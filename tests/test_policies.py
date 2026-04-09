@@ -77,7 +77,7 @@ class AdaptivePolicyTests(unittest.TestCase):
 
         self.assertTrue(decision.should_close)
 
-    def test_closes_epoch_on_ack_latency_anomaly(self) -> None:
+    def test_increases_target_when_ack_latency_degrades(self) -> None:
         policy = AdaptiveEpochPolicy(
             target_window=2.0,
             min_epoch_events=2,
@@ -94,7 +94,8 @@ class AdaptivePolicyTests(unittest.TestCase):
             TelemetrySample(arrival_rate=8.0, ack_latency=3.1),
         )
 
-        self.assertTrue(decision.should_close)
+        self.assertGreater(decision.next_target, state.current_target)
+        self.assertFalse(decision.should_close)
 
     def test_closes_epoch_on_rolling_anomaly(self) -> None:
         policy = AdaptiveEpochPolicy(

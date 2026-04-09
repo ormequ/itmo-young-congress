@@ -76,6 +76,7 @@ def _aggregate_batch_rows(rows: list[dict]) -> list[dict]:
                 "scenario": scenario,
                 "policy": policy,
                 "avg_vulnerability_window": sum(item["avg_vulnerability_window"] for item in group) / count,
+                "p95_vulnerability_window": sum(item.get("p95_vulnerability_window", 0.0) for item in group) / count,
                 "max_vulnerability_window": max(item["max_vulnerability_window"] for item in group),
                 "commit_frequency": sum(item["commit_frequency"] for item in group) / count,
                 "max_queue_depth": max(item["max_queue_depth"] for item in group),
@@ -553,24 +554,28 @@ def build_presentation_plots(
     legend_handles = _build_legend_handles()
 
     # 1. Security overview.
-    fig, ax = plt.subplots(1, 1, figsize=(12, 6.5), sharex=True)
-    for index, policy in enumerate(POLICY_ORDER):
-        offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
-        heights = _metric_values(batch_rows, scenarios, policy, "avg_vulnerability_window")
-        bars = ax.bar(
-            offsets,
-            heights,
-            width=width,
-            color=POLICY_COLORS[policy],
-            edgecolor="white",
-            linewidth=0.8,
-        )
-        _annotate_bars(ax, bars, heights)
-    ax.set_ylabel("Среднее окно уязвимости, с")
-    ax.set_xticks(x_positions)
-    ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios])
-    ax.grid(axis="y", alpha=0.2, linestyle="--")
-    ax.set_axisbelow(True)
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharex=True)
+    for ax, metric_key, ylabel in [
+        (axes[0], "avg_vulnerability_window", "Среднее окно уязвимости, с"),
+        (axes[1], "p95_vulnerability_window", "P95 окна уязвимости, с"),
+    ]:
+        for index, policy in enumerate(POLICY_ORDER):
+            offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
+            heights = _metric_values(batch_rows, scenarios, policy, metric_key)
+            bars = ax.bar(
+                offsets,
+                heights,
+                width=width,
+                color=POLICY_COLORS[policy],
+                edgecolor="white",
+                linewidth=0.8,
+            )
+            _annotate_bars(ax, bars, heights)
+        ax.set_ylabel(ylabel)
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios])
+        ax.grid(axis="y", alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
     fig.legend(handles=legend_handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.02))
     fig.tight_layout()
     fig.savefig(output_dir / "window_overview.png", dpi=180, bbox_inches="tight")
