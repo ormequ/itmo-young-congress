@@ -34,6 +34,8 @@ def run_batch(
                         "max_queue_depth": result.metrics.max_queue_depth,
                         "p95_queue_depth": result.metrics.p95_queue_depth,
                         "queue_over_capacity_count": result.metrics.queue_over_capacity_count,
+                        "max_epoch_payload_bytes": result.metrics.max_epoch_payload_bytes,
+                        "p95_epoch_payload_bytes": result.metrics.p95_epoch_payload_bytes,
                         "throughput": result.metrics.throughput,
                         "avg_proof_bytes": result.metrics.avg_proof_bytes,
                         "signature_time_per_second": result.metrics.signature_time_per_second,
@@ -64,6 +66,8 @@ def _aggregate(rows: Sequence[dict]) -> List[dict]:
                 "max_queue_depth": max(item["max_queue_depth"] for item in group),
                 "p95_queue_depth": sum(item["p95_queue_depth"] for item in group) / count,
                 "queue_over_capacity_count": sum(item["queue_over_capacity_count"] for item in group),
+                "max_epoch_payload_bytes": max(item["max_epoch_payload_bytes"] for item in group),
+                "p95_epoch_payload_bytes": sum(item["p95_epoch_payload_bytes"] for item in group) / count,
                 "throughput": sum(item["throughput"] for item in group) / count,
                 "avg_proof_bytes": sum(item["avg_proof_bytes"] for item in group) / count,
                 "signature_time_per_second": sum(item["signature_time_per_second"] for item in group) / count,
@@ -86,13 +90,13 @@ def build_report(summary_path: Path, report_dir: Path) -> Path:
 
     md_path = report_dir / "summary.md"
     md_lines = [
-        "| scenario | policy | avg_commit_latency | p95_commit_latency | max_commit_latency | commit_frequency | max_queue_depth | p95_queue_depth | queue_over_capacity_count | throughput | avg_proof_bytes | signature_time_per_second |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| scenario | policy | avg_commit_latency | p95_commit_latency | max_commit_latency | commit_frequency | max_queue_depth | p95_queue_depth | queue_over_capacity_count | max_epoch_payload_bytes | p95_epoch_payload_bytes | throughput | avg_proof_bytes | signature_time_per_second |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary:
         md_lines.append(
             "| {scenario} | {policy} | {avg_commit_latency:.3f} | {p95_commit_latency:.3f} | {max_commit_latency:.3f} | "
-            "{commit_frequency:.3f} | {max_queue_depth} | {p95_queue_depth:.3f} | {queue_over_capacity_count} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
+            "{commit_frequency:.3f} | {max_queue_depth} | {p95_queue_depth:.3f} | {queue_over_capacity_count} | {max_epoch_payload_bytes} | {p95_epoch_payload_bytes:.1f} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
             "{signature_time_per_second:.3f} |".format(
                 **row
             )
@@ -144,6 +148,7 @@ def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig
         telemetry_window_size=scenario.telemetry_window_size,
         anomaly_score_threshold=scenario.anomaly_score_threshold,
         criticality_threshold=scenario.criticality_threshold,
+        epoch_buffer_budget_bytes=scenario.epoch_buffer_budget_bytes,
     )
 
 

@@ -51,6 +51,7 @@ def generate_events(scenario: ScenarioConfig, seed: int) -> List[Event]:
                         if critical
                         else settings.simulator_generated_criticality_default
                     ),
+                    payload_size_bytes=len(payload),
                 )
             )
             event_id += 1
@@ -142,6 +143,7 @@ def _run_simulation_internal(
     commits: List[CommitRecord] = []
     commit_latencies: List[float] = []
     queue_depths: List[int] = []
+    epoch_payload_records: List[int] = []
     signature_times: List[float] = []
     anchor_ack_history: List[float] = []
     cpu_history: List[float] = []
@@ -164,6 +166,7 @@ def _run_simulation_internal(
         signature_times.append(effective_signature_time)
         commit_time = commit_reference_time + max(event.anchor_ack_latency for event in epoch_events) + effective_signature_time
         proof_sizes = tuple(len(tree.proof_for(index)) for index, _ in enumerate(epoch_events))
+        epoch_payload_records.append(sum(event.payload_size_bytes or len(event.payload) for event in epoch_events))
         for event in epoch_events:
             commit_latencies.append(commit_time - event.arrival_time)
         commits.append(
@@ -181,6 +184,12 @@ def _run_simulation_internal(
     for event in event_stream:
         epoch_events.append(event)
         queue_depths.append(len(epoch_events))
+        epoch_payload_bytes = sum(item.payload_size_bytes or len(item.payload) for item in epoch_events)
+        memory_pressure = (
+            epoch_payload_bytes / getattr(policy, "epoch_buffer_budget_bytes", float("inf"))
+            if getattr(policy, "epoch_buffer_budget_bytes", float("inf")) > 0
+            else 0.0
+        )
         rolling_input_queue_fill = max(event.input_queue_fill, len(epoch_events) / max(1, scenario.queue_capacity))
         anchor_ack_window = anchor_ack_history[-scenario.telemetry_window_size :]
         cpu_window = cpu_history[-scenario.telemetry_window_size :]
@@ -212,8 +221,14 @@ def _run_simulation_internal(
                 _anomaly_score(event.data_value, data_window),
             ),
             criticality_level=event.criticality_level,
+            epoch_payload_bytes=epoch_payload_bytes,
+            memory_pressure=memory_pressure,
         )
-        state = EpochState(epoch_event_count=len(epoch_events), current_target=current_target)
+        state = EpochState(
+            epoch_event_count=len(epoch_events),
+            current_target=current_target,
+            epoch_payload_bytes=epoch_payload_bytes,
+        )
         decision = policy.evaluate(state, telemetry)
         if collect_trace:
             trace.append(
@@ -225,6 +240,8 @@ def _run_simulation_internal(
                     "cpu_load": event.cpu_load,
                     "input_queue_fill": rolling_input_queue_fill,
                     "epoch_event_count": len(epoch_events),
+                    "epoch_payload_bytes": epoch_payload_bytes,
+                    "memory_pressure": memory_pressure,
                     "current_target": current_target,
                     "next_target": decision.next_target,
                     "anomaly_score": telemetry.anomaly_score,
@@ -259,6 +276,8 @@ def _run_simulation_internal(
         p95_queue_depth=_p95([float(depth) for depth in queue_depths]),
         throughput=len(event_stream) / max(scenario.duration, 1e-9),
         queue_over_capacity_count=max(0, len([depth for depth in queue_depths if depth > scenario.queue_capacity])),
+        max_epoch_payload_bytes=max(epoch_payload_records) if epoch_payload_records else 0,
+        p95_epoch_payload_bytes=_p95([float(value) for value in epoch_payload_records]),
         avg_proof_hashes=avg_proof_hashes,
         avg_proof_bytes=avg_proof_hashes * 32.0,
         signature_count=len(signature_times),

@@ -23,12 +23,15 @@ class TelemetrySample:
     rolling_data_std: float = 0.0
     anomaly_score: float = 0.0
     criticality_level: float = 0.0
+    epoch_payload_bytes: int = 0
+    memory_pressure: float = 0.0
 
 
 @dataclass(frozen=True)
 class EpochState:
     epoch_event_count: int
     current_target: int
+    epoch_payload_bytes: int = 0
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,7 @@ class ScenarioConfig:
     telemetry_window_size: int = field(default_factory=lambda: load_settings().telemetry_window_size)
     anomaly_score_threshold: float = field(default_factory=lambda: load_settings().anomaly_score_threshold)
     criticality_threshold: float = field(default_factory=lambda: load_settings().criticality_threshold)
+    epoch_buffer_budget_bytes: float = field(default_factory=lambda: load_settings().epoch_buffer_budget_bytes)
 
 
 @dataclass(frozen=True)
@@ -71,6 +75,7 @@ class Event:
     arrival_rate: float
     data_value: float = 0.0
     criticality_level: float = 0.0
+    payload_size_bytes: int = 0
 
     def with_arrival(self, arrival_time: float) -> "Event":
         return Event(
@@ -84,6 +89,7 @@ class Event:
             arrival_rate=self.arrival_rate,
             data_value=self.data_value,
             criticality_level=self.criticality_level,
+            payload_size_bytes=self.payload_size_bytes,
         )
 
 
@@ -107,6 +113,8 @@ class RunMetrics:
     p95_queue_depth: float
     throughput: float
     queue_over_capacity_count: int
+    max_epoch_payload_bytes: int
+    p95_epoch_payload_bytes: float
     avg_proof_hashes: float
     avg_proof_bytes: float
     signature_count: int

@@ -38,9 +38,11 @@ class AdaptiveEpochPolicy:
     use_anchor_ack_latency: bool = True
     use_cpu_load: bool = True
     use_input_queue_fill: bool = True
+    use_memory_pressure: bool = True
     use_early_close: bool = True
     criticality_threshold: float = field(default_factory=lambda: load_settings().criticality_threshold)
     anomaly_score_threshold: float = field(default_factory=lambda: load_settings().anomaly_score_threshold)
+    epoch_buffer_budget_bytes: float = field(default_factory=lambda: load_settings().epoch_buffer_budget_bytes)
 
     def _bounds_for_rate(self, arrival_rate: float) -> tuple[int, int]:
         lower = self.min_epoch_events
@@ -71,6 +73,8 @@ class AdaptiveEpochPolicy:
             )
         if self.use_input_queue_fill and telemetry.input_queue_fill > settings.policy_input_queue_fill_trigger:
             scaled_target *= max(settings.policy_input_queue_fill_min_scale, 1.0 - telemetry.input_queue_fill)
+        if self.use_memory_pressure and telemetry.memory_pressure > settings.policy_memory_pressure_trigger:
+            scaled_target *= max(settings.policy_memory_pressure_min_scale, 1.0 - telemetry.memory_pressure)
 
         lower, upper = self._bounds_for_rate(base_rate)
         candidate = max(round(scaled_target), lower) if math.isinf(upper) else _clamp(round(scaled_target), lower, upper)
@@ -82,6 +86,7 @@ class AdaptiveEpochPolicy:
             or (self.use_early_close and telemetry.anomaly_score >= self.anomaly_score_threshold)
             or (self.use_early_close and telemetry.criticality_level >= self.criticality_threshold)
             or (self.use_early_close and telemetry.input_queue_fill >= settings.policy_input_queue_close_threshold)
+            or (self.use_early_close and self.use_memory_pressure and telemetry.memory_pressure >= 1.0)
             or (self.use_early_close and telemetry.cpu_load >= settings.policy_cpu_close_threshold)
             or state.epoch_event_count >= next_target
         )

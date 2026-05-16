@@ -58,6 +58,34 @@ class AdaptivePolicyTests(unittest.TestCase):
 
         self.assertLess(decision.next_target, 16)
 
+    def test_memory_pressure_reduces_target_and_closes_at_budget(self) -> None:
+        policy = AdaptiveEpochPolicy(
+            target_commit_latency=2.0,
+            min_epoch_events=2,
+            max_epoch_events=20,
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
+            change_threshold=0.1,
+            anchor_ack_target=1.0,
+            epoch_buffer_budget_bytes=1_000,
+        )
+        state = EpochState(epoch_event_count=1, current_target=10, epoch_payload_bytes=850)
+
+        decision = policy.evaluate(
+            state,
+            TelemetrySample(arrival_rate=8.0, epoch_payload_bytes=850, memory_pressure=0.85),
+        )
+
+        self.assertLess(decision.next_target, 16)
+        self.assertFalse(decision.should_close)
+
+        close_decision = policy.evaluate(
+            state,
+            TelemetrySample(arrival_rate=8.0, epoch_payload_bytes=1_000, memory_pressure=1.0),
+        )
+
+        self.assertTrue(close_decision.should_close)
+
     def test_closes_epoch_early_for_critical_events(self) -> None:
         policy = AdaptiveEpochPolicy(
             target_commit_latency=2.0,

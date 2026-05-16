@@ -96,6 +96,36 @@ class SimulatorTests(unittest.TestCase):
             )
         )
 
+    def test_memory_budget_closes_epoch_by_payload_bytes(self) -> None:
+        scenario = ScenarioConfig(
+            name="memory-budget",
+            duration=2.0,
+            queue_capacity=20,
+            target_commit_latency=10.0,
+            segments=(ArrivalSegment(duration=2.0, rate=5.0, anchor_ack_latency=1.0),),
+        )
+        events = [
+            Event(1, 0.0, b"a" * 600, 1.0, 0.2, 0.1, False, 5.0),
+            Event(2, 0.1, b"b" * 500, 1.0, 0.2, 0.1, False, 5.0),
+            Event(3, 0.2, b"c" * 100, 1.0, 0.2, 0.1, False, 5.0),
+        ]
+        adaptive = AdaptiveEpochPolicy(
+            target_commit_latency=10.0,
+            min_epoch_events=1,
+            max_epoch_events=100,
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
+            change_threshold=0.1,
+            anchor_ack_target=1.0,
+            epoch_buffer_budget_bytes=1_000,
+        )
+
+        result = run_simulation(scenario, adaptive, events=events)
+
+        self.assertEqual([commit.event_ids for commit in result.commits], [(1, 2), (3,)])
+        self.assertEqual(result.metrics.max_epoch_payload_bytes, 1_100)
+        self.assertEqual(result.metrics.p95_epoch_payload_bytes, 1_100)
+
     def test_adaptive_policy_closes_early_for_critical_event(self) -> None:
         scenario = ScenarioConfig(
             name="critical",

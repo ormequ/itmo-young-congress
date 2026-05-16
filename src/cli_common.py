@@ -21,6 +21,7 @@ def load_scenario(path: Path) -> ScenarioConfig:
         telemetry_window_size=payload.get("telemetry_window_size", settings.telemetry_window_size),
         anomaly_score_threshold=payload.get("anomaly_score_threshold", settings.anomaly_score_threshold),
         criticality_threshold=payload.get("criticality_threshold", settings.criticality_threshold),
+        epoch_buffer_budget_bytes=payload.get("epoch_buffer_budget_bytes", settings.epoch_buffer_budget_bytes),
     )
 
 
@@ -37,6 +38,7 @@ def make_policies(scenario: ScenarioConfig) -> dict:
         anchor_ack_target=settings.policy_anchor_ack_target,
         criticality_threshold=scenario.criticality_threshold,
         anomaly_score_threshold=scenario.anomaly_score_threshold,
+        epoch_buffer_budget_bytes=scenario.epoch_buffer_budget_bytes,
     )
     return {
         "fixed-small": FixedEpochPolicy(

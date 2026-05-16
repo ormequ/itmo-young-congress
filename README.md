@@ -34,6 +34,9 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 - `criticality_level` - оценка критичности текущих данных.
 - `criticality_threshold` - порог, после которого данные считаются критичными.
 - `epoch_event_count` - число событий, уже накопленных в текущей эпохе.
+- `epoch_payload_bytes` - суммарный объем payload в открытой эпохе.
+- `epoch_buffer_budget_bytes` - бюджет памяти шлюза, выделенный под буфер открытой эпохи.
+- `memory_pressure` - доля использования бюджета памяти открытой эпохой.
 
 ### Фиксированная политика
 
@@ -85,6 +88,15 @@ if input_queue_fill > policy_input_queue_fill_trigger:
   scaled_target *= max(policy_input_queue_fill_min_scale, 1 - input_queue_fill)
 ```
 
+Если объем накопленных payload приближается к бюджету памяти открытой эпохи, target тоже уменьшается:
+
+```text
+memory_pressure = epoch_payload_bytes / epoch_buffer_budget_bytes
+
+if memory_pressure > policy_memory_pressure_trigger:
+  scaled_target *= max(policy_memory_pressure_min_scale, 1 - memory_pressure)
+```
+
 После этого новый target ограничивается диапазоном:
 
 ```text
@@ -113,6 +125,7 @@ next_target = candidate if delta_ratio > policy_change_threshold else current_ta
 - `anomaly_score >= anomaly_score_threshold`;
 - `criticality_level >= criticality_threshold`;
 - `input_queue_fill >= policy_input_queue_close_threshold`;
+- `memory_pressure >= 1.0`;
 - `cpu_load >= policy_cpu_close_threshold`;
 
 Итоговое правило:
@@ -162,6 +175,8 @@ anomaly_score >= anomaly_score_threshold
 - `p95_queue_depth`
 - `throughput`
 - `queue_over_capacity_count`
+- `max_epoch_payload_bytes`
+- `p95_epoch_payload_bytes`
 - `avg_proof_hashes`
 - `avg_proof_bytes`
 
@@ -184,6 +199,7 @@ commit_latency = commit_time - event.arrival_time
 | `MAX_EPOCH_EVENTS` | `inf` | максимальное число событий в эпохе, если ограничение нужно |
 | `MIN_EPOCH_DURATION_SECONDS` | `0` | минимальная длительность открытой эпохи в секундах |
 | `MAX_EPOCH_DURATION_SECONDS` | `inf` | максимальная длительность открытой эпохи в секундах |
+| `EPOCH_BUFFER_BUDGET_BYTES` | `inf` | бюджет памяти под payload открытой эпохи |
 | `POLICY_CHANGE_THRESHOLD` | `0.15` | минимальное относительное изменение `target` для перенастройки |
 | `POLICY_ANCHOR_ACK_TARGET` | `1.0` | нормальная задержка подтверждения записи |
 
@@ -201,6 +217,8 @@ commit_latency = commit_time - event.arrival_time
 | `POLICY_INPUT_QUEUE_FILL_TRIGGER` | `0.8` | порог, после которого очередь начинает уменьшать `target` |
 | `POLICY_INPUT_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высокой очереди |
 | `POLICY_INPUT_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
+| `POLICY_MEMORY_PRESSURE_TRIGGER` | `0.8` | порог, после которого заполнение буфера эпохи уменьшает `target` |
+| `POLICY_MEMORY_PRESSURE_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высоком заполнении буфера эпохи |
 | `POLICY_CPU_CLOSE_THRESHOLD` | `0.95` | жесткий порог раннего закрытия по CPU |
 | `SEGMENT_ANCHOR_ACK_LATENCY` | `1.0` | значение `anchor_ack_latency` по умолчанию для сегмента без явного поля |
 | `SEGMENT_CPU_LOAD` | `0.2` | значение `cpu_load` по умолчанию для сегмента без явного поля |
