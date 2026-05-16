@@ -51,6 +51,21 @@ class PlotResultsTests(unittest.TestCase):
             ],
         )
 
+    def test_commit_latency_overview_uses_tail_latency_panels(self) -> None:
+        plot_results = _load_plot_module()
+
+        self.assertEqual(
+            plot_results.COMMIT_LATENCY_OVERVIEW_SCENARIOS,
+            ["anchor-backpressure", "burst", "memory-pressure", "queue-saturation", "combined-stress", "steady"],
+        )
+        self.assertEqual(
+            plot_results.COMMIT_LATENCY_OVERVIEW_PANELS,
+            [
+                ("p95_commit_latency", "P95 commit latency, s"),
+                ("max_commit_latency", "Max commit latency, s"),
+            ],
+        )
+
     def test_plot_script_contains_no_cyrillic_plot_text(self) -> None:
         root = Path(__file__).resolve().parents[1]
         source = (root / "scripts" / "plot_results.py").read_text(encoding="utf-8")
@@ -204,12 +219,48 @@ class PlotResultsTests(unittest.TestCase):
             self.assertTrue((output_dir / "avg_proof_bytes.png").exists())
             self.assertTrue((output_dir / "tradeoff.png").exists())
             self.assertTrue((output_dir / "commit_latency_overview.png").exists())
+            self.assertTrue((output_dir / "commit_latency_full.png").exists())
             self.assertTrue((output_dir / "cost_and_stability_overview.png").exists())
             self.assertTrue((output_dir / "cost_and_stability_full.png").exists())
             self.assertTrue((output_dir / "memory_pressure_overview.png").exists())
             self.assertTrue((output_dir / "anchor_backpressure_overview.png").exists())
             self.assertTrue((output_dir / "anchor_backpressure_full.png").exists())
             self.assertTrue((output_dir / "anchor_backpressure_ablation.png").exists())
+
+    def test_build_combined_stress_table_writes_markdown_and_csv(self) -> None:
+        plot_results = _load_plot_module()
+        rows = []
+        for seed in range(1, 4):
+            for policy in ["adaptive", "fixed-small", "fixed-nominal", "fixed-large"]:
+                rows.append(
+                    {
+                        "scenario": "combined-stress",
+                        "seed": seed,
+                        "policy": policy,
+                        "avg_commit_latency": float(seed),
+                        "p95_commit_latency": float(seed + 1),
+                        "max_commit_latency": float(seed + 2),
+                        "commit_frequency": float(seed + 3),
+                        "p95_epoch_payload_bytes": float(1024 * seed),
+                        "p95_pending_anchor_count": float(seed + 4),
+                        "queue_over_capacity_count": seed,
+                    }
+                )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            summary_path = tmp / "batch_summary.json"
+            summary_path.write_text(json.dumps(rows), encoding="utf-8")
+            output_dir = tmp / "plots"
+
+            plot_results.build_combined_stress_table(summary_path, output_dir)
+
+            self.assertTrue((output_dir / "combined_stress_table.md").exists())
+            self.assertTrue((output_dir / "combined_stress_table.csv").exists())
+            self.assertFalse((output_dir / "combined_stress_table.png").exists())
+            markdown = (output_dir / "combined_stress_table.md").read_text(encoding="utf-8")
+            self.assertIn("mean +/- std", markdown)
+            self.assertIn("P95 payload, KiB", markdown)
 
     def test_aggregate_batch_rows_includes_article_metrics(self) -> None:
         plot_results = _load_plot_module()

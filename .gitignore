@@ -6,3 +6,4 @@ artifacts/
 .worktrees/
 *.md
 !README.md
+.DS_Store

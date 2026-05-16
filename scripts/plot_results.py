@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 from pathlib import Path
+import statistics
 import tempfile
 
 _cache_dir = Path(tempfile.gettempdir()) / "matplotlib-cache"
@@ -40,10 +42,31 @@ ABLATION_POLICY_LABELS = {
     "fixed-nominal": "Fixed-nominal",
 }
 PRESENTATION_SCENARIOS = ["critical-event-injection", "storage-degradation", "queue-saturation"]
+COMMIT_LATENCY_OVERVIEW_SCENARIOS = [
+    "anchor-backpressure",
+    "burst",
+    "memory-pressure",
+    "queue-saturation",
+    "combined-stress",
+    "steady",
+]
+COMMIT_LATENCY_OVERVIEW_PANELS = [
+    ("p95_commit_latency", "P95 commit latency, s"),
+    ("max_commit_latency", "Max commit latency, s"),
+]
 COST_OVERVIEW_SCENARIOS = ["burst", "anchor-backpressure", "memory-pressure", "queue-saturation", "combined-stress"]
 COST_OVERVIEW_PANELS = [
     ("commit_frequency", "Commit frequency, 1/s"),
     ("queue_over_capacity_count", "Queue over-capacity count"),
+]
+COMBINED_STRESS_TABLE_COLUMNS = [
+    ("avg_commit_latency", "Avg latency, s", 1.0),
+    ("p95_commit_latency", "P95 latency, s", 1.0),
+    ("max_commit_latency", "Max latency, s", 1.0),
+    ("commit_frequency", "Commit freq., 1/s", 1.0),
+    ("p95_epoch_payload_bytes", "P95 payload, KiB", 1 / 1024),
+    ("p95_pending_anchor_count", "P95 pending anchors", 1.0),
+    ("queue_over_capacity_count", "Queue over-capacity", 1.0),
 ]
 
 
@@ -172,8 +195,22 @@ def _metric_values(rows: list[dict], scenarios: list[str], policy: str, metric_k
         source_key = f"{metric_key[:-4]}_bytes"
         values = {(row["scenario"], row["policy"]): row.get(source_key, 0.0) / 1024 for row in rows}
         return [values.get((scenario, policy), 0.0) for scenario in scenarios]
-    values = {(row["scenario"], row["policy"]): row[metric_key] for row in rows}
+    values = {(row["scenario"], row["policy"]): row.get(metric_key, 0.0) for row in rows}
     return [values.get((scenario, policy), 0.0) for scenario in scenarios]
+
+
+def _mean_std(values: list[float]) -> tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    if len(values) == 1:
+        return values[0], 0.0
+    return statistics.mean(values), statistics.stdev(values)
+
+
+def _format_mean_std(values: list[float], scale: float = 1.0) -> str:
+    scaled = [value * scale for value in values]
+    mean, std = _mean_std(scaled)
+    return f"{mean:.2f} +/- {std:.2f}"
 
 
 def _step_series(points: list[dict], metric_key: str) -> tuple[list[float], list[float]]:
@@ -393,6 +430,45 @@ def _plot_ablation_panels(rows: list[dict], output_path: Path) -> None:
     plt.close(fig)
 
 
+def build_combined_stress_table(summary_path: Path, output_dir: Path) -> None:
+    rows = json.loads(summary_path.read_text(encoding="utf-8"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    scenario_rows = [
+        row
+        for row in rows
+        if row.get("scenario") == "combined-stress" and row.get("policy") in POLICY_ORDER
+    ]
+    grouped: dict[str, list[dict]] = {policy: [] for policy in POLICY_ORDER}
+    for row in scenario_rows:
+        grouped[row["policy"]].append(row)
+
+    headers = ["Policy"] + [label for _, label, _ in COMBINED_STRESS_TABLE_COLUMNS]
+    table_rows: list[list[str]] = []
+    for policy in POLICY_ORDER:
+        policy_rows = grouped[policy]
+        if not policy_rows:
+            continue
+        table_row = [POLICY_LABELS[policy]]
+        for metric_key, _, scale in COMBINED_STRESS_TABLE_COLUMNS:
+            values = [float(row.get(metric_key, 0.0)) for row in policy_rows]
+            table_row.append(_format_mean_std(values, scale))
+        table_rows.append(table_row)
+
+    md_lines = [
+        "Combined stress results, mean +/- std over available seeds.",
+        "",
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] + ["---:"] * (len(headers) - 1)) + " |",
+    ]
+    for row in table_rows:
+        md_lines.append("| " + " | ".join(row) + " |")
+    (output_dir / "combined_stress_table.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    with (output_dir / "combined_stress_table.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(headers)
+        writer.writerows(table_rows)
+
 def _plot_tradeoff(rows: list[dict], output_path: Path) -> None:
     _apply_presentation_style()
     fig, ax = plt.subplots(figsize=(9, 6.5))
@@ -464,12 +540,19 @@ def build_batch_plots(summary_path: Path, output_dir: Path) -> None:
     _plot_tradeoff(summary, output_dir / "tradeoff.png")
     _plot_grouped_bar_panels(
         summary,
+        COMMIT_LATENCY_OVERVIEW_PANELS,
+        output_dir / "commit_latency_overview.png",
+        scenarios=COMMIT_LATENCY_OVERVIEW_SCENARIOS,
+        ncols=2,
+    )
+    _plot_grouped_bar_panels(
+        summary,
         [
             ("avg_commit_latency", "Average commit latency, s"),
             ("p95_commit_latency", "P95 commit latency, s"),
             ("max_commit_latency", "Max commit latency, s"),
         ],
-        output_dir / "commit_latency_overview.png",
+        output_dir / "commit_latency_full.png",
     )
     _plot_grouped_bar_panels(
         summary,
@@ -522,6 +605,7 @@ def build_batch_plots(summary_path: Path, output_dir: Path) -> None:
         ncols=2,
     )
     _plot_ablation_panels(rows, output_dir / "anchor_backpressure_ablation.png")
+    build_combined_stress_table(summary_path, output_dir)
 
 
 def build_stress_plots(summary_path: Path, output_dir: Path) -> None:

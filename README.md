@@ -327,11 +327,13 @@ commit_latency = commit_time - event.arrival_time
 
 `scripts/plot_results.py batch` строит обзорные рисунки по `batch_summary.json`:
 
-- `commit_latency_overview.png` - показывает, что adaptive policy управляет `commit_latency` как freshness/security-метрикой;
-- `cost_and_stability_overview.png` - показывает цену фиксации через `commit_frequency`, `p95_queue_depth` и `queue_over_capacity_count`;
+- `commit_latency_overview.png` - показывает хвосты задержки фиксации через `p95_commit_latency` и `max_commit_latency`; среднее значение остается в summary/table, но не перегружает основной график;
+- `commit_latency_full.png` - расширенная версия с `avg_commit_latency`, `p95_commit_latency` и `max_commit_latency`;
+- `cost_and_stability_overview.png` - показывает цену фиксации через `commit_frequency` и `queue_over_capacity_count`;
 - `cost_and_stability_full.png` - расширенная версия с дополнительными cost-метриками;
 - `memory_pressure_overview.png` - показывает, что `memory_pressure` ограничивает payload открытой эпохи; payload выводится в KiB;
 - `anchor_backpressure_ablation.png` - сравнивает `Adaptive full`, `Adaptive w/o anchor BP`, `Fixed-small` и `Fixed-nominal`; здесь `BP` означает `backpressure`.
+- `combined_stress_table.md`, `combined_stress_table.csv` - таблица mean +/- std по seeds для точного численного сравнения политик в сценарии `Combined stress`.
 - `anchor_backpressure_overview.png` и `anchor_backpressure_full.png` сохраняются как вспомогательные агрегированные графики, но для статьи лучше использовать timeline-график реакции ниже.
 - старые `avg_commit_latency.png`, `max_commit_latency.png`, `commit_frequency.png`, `p95_queue_depth.png`, `avg_proof_bytes.png`, `tradeoff.png` также сохраняются.
 
@@ -371,7 +373,7 @@ mkdir -p artifacts/article/plots
 
 PYTHONPATH=src python3 -m itmo_young_congress demo-run-batch \
   --config configs/steady.json,configs/burst.json,configs/storage-degradation.json,configs/cpu-pressure.json,configs/queue-saturation.json,configs/combined-stress.json,configs/critical-event-injection.json,configs/memory-pressure.json,configs/anchor-backpressure.json \
-  --seeds 1,2,3 \
+  --seeds 1,2,3,4,5,6,7,8,9,10 \
   --output-dir artifacts/article/batch
 
 python3 scripts/plot_results.py batch \
