@@ -9,7 +9,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 -m itmo_young_congress demo-run-scenario --config configs/steady.json --policy adaptive --seed 1 --output-dir artifacts/steady
 PYTHONPATH=src python3 -m itmo_young_congress demo-run-batch --config configs/burst.json --seeds 1,2,3 --output-dir artifacts/burst-batch
 PYTHONPATH=src python3 -m itmo_young_congress demo-build-report --summary artifacts/burst-batch/batch_summary.json --output-dir artifacts/burst-report
-PYTHONPATH=src python3 -m itmo_young_congress demo-stress-test --config configs/burst.json --arrival-rates 2,4,6,8,10,12 --seeds 1,2,3 --window-limit 5.0 --queue-fill-limit 0.9 --output-dir artifacts/stress/burst
+PYTHONPATH=src python3 -m itmo_young_congress demo-stress-test --config configs/burst.json --arrival-rates 2,4,6,8,10,12 --seeds 1,2,3 --commit-latency-limit 5.0 --input-queue-fill-limit 0.9 --output-dir artifacts/stress/burst
 PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/critical-event-injection.json --seed 2 --output artifacts/demo.json
 ```
 
@@ -18,22 +18,22 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 Используются следующие обозначения:
 
 - `arrival_rate` - текущая интенсивность входного потока, то есть сколько событий поступает в среднем за секунду.
-- `target_window` - желаемая длительность открытой эпохи в секундах.
-- `ack_latency` - время подтверждения записи эпохи во внешнее хранилище.
-- `ack_target` - нормальное ожидаемое время такого подтверждения.
+- `target_commit_latency` - целевая задержка фиксации, по которой рассчитывается базовая длительность накопления эпохи.
+- `anchor_ack_latency` - время подтверждения записи эпохи во внешнее хранилище.
+- `anchor_ack_target` - нормальное ожидаемое время такого подтверждения.
 - `cpu_load` - текущая загрузка вычислительного узла, на котором выполняется алгоритм.
-- `queue_fill` - степень заполнения очереди входящих событий.
+- `input_queue_fill` - степень заполнения очереди входящих событий.
 - `base_target` - базовый размер эпохи в событиях, рассчитанный из входного потока.
 - `scaled_target` - размер эпохи после поправок по телеметрии.
 - `min_epoch_events` и `max_epoch_events` - нижняя и верхняя границы эпохи по числу событий.
-- `min_window_seconds` и `max_window_seconds` - нижняя и верхняя границы по длительности открытой эпохи.
+- `min_epoch_duration_seconds` и `max_epoch_duration_seconds` - нижняя и верхняя границы по длительности открытой эпохи.
 - `min_epoch` и `max_epoch` - итоговые границы эпохи после объединения ограничений по событиям и времени.
 - `current_target` - текущий размер эпохи до пересчета.
 - `candidate` - новый кандидатный размер эпохи.
 - `policy_change_threshold` - минимальное относительное изменение размера эпохи, при котором политика действительно перенастраивается.
-- `data_criticality` - оценка критичности текущих данных.
+- `criticality_level` - оценка критичности текущих данных.
 - `criticality_threshold` - порог, после которого данные считаются критичными.
-- `event_count` - число событий, уже накопленных в текущей эпохе.
+- `epoch_event_count` - число событий, уже накопленных в текущей эпохе.
 
 ### Фиксированная политика
 
@@ -50,7 +50,7 @@ target_fixed = epoch_size
 Адаптивная политика сначала оценивает базовый размер эпохи по интенсивности входного потока:
 
 ```text
-base_target = round(arrival_rate * target_window)
+base_target = round(arrival_rate * target_commit_latency)
 ```
 
 Дальше этот размер модифицируется телеметрией:
@@ -63,8 +63,8 @@ scaled_target = base_target
 
 ```text
 scaled_target *= 1 + min(
-  (ack_latency / ack_target - 1) * policy_ack_latency_scale,
-  policy_ack_latency_cap
+  (anchor_ack_latency / anchor_ack_target - 1) * policy_anchor_ack_latency_scale,
+  policy_anchor_ack_latency_cap
 )
 ```
 
@@ -81,8 +81,8 @@ if cpu_load > policy_cpu_load_trigger:
 Если очередь близка к насыщению, target наоборот уменьшается:
 
 ```text
-if queue_fill > policy_queue_fill_trigger:
-  scaled_target *= max(policy_queue_fill_min_scale, 1 - queue_fill)
+if input_queue_fill > policy_input_queue_fill_trigger:
+  scaled_target *= max(policy_input_queue_fill_min_scale, 1 - input_queue_fill)
 ```
 
 После этого новый target ограничивается диапазоном:
@@ -92,8 +92,8 @@ candidate = clamp(round(scaled_target), min_epoch, max_epoch)
 ```
 
 Здесь:
-- `min_epoch` это максимум из `min_epoch_events` и ограничения, полученного из `min_window_seconds`;
-- `max_epoch` это минимум из `max_epoch_events` и ограничения, полученного из `max_window_seconds`.
+- `min_epoch` это максимум из `min_epoch_events` и ограничения, полученного из `min_epoch_duration_seconds`;
+- `max_epoch` это минимум из `max_epoch_events` и ограничения, полученного из `max_epoch_duration_seconds`.
 
 Эти дополнительные ограничения применяются только к адаптивной политике.
 Фиксированная политика всегда использует ровно заданный `epoch_size`.
@@ -110,20 +110,20 @@ next_target = candidate if delta_ratio > policy_change_threshold else current_ta
 Адаптивная политика может закрыть эпоху раньше заполнения, если выполняется хотя бы одно условие:
 
 - пришло критичное событие;
-- детектор аномалий по скользящему окну пометил телеметрию как аномальную;
-- `data_criticality >= criticality_threshold`;
-- `queue_fill >= policy_queue_close_threshold`;
+- `anomaly_score >= anomaly_score_threshold`;
+- `criticality_level >= criticality_threshold`;
+- `input_queue_fill >= policy_input_queue_close_threshold`;
 - `cpu_load >= policy_cpu_close_threshold`;
 
 Итоговое правило:
 
 ```text
-should_close = early_close_condition or event_count >= next_target
+should_close = early_close_condition or epoch_event_count >= next_target
 ```
 
 ## Детектирование аномалий по скользящему окну
 
-Для `ack_latency`, `cpu_load`, `queue_fill` и `data_value` хранится окно последних `telemetry_window_size` значений.
+Для `anchor_ack_latency`, `cpu_load`, `input_queue_fill` и `data_value` хранится окно последних `telemetry_window_size` значений.
 
 По окну считаются:
 
@@ -132,21 +132,28 @@ mean = average(window)
 std = pstdev(window)
 ```
 
-Новое значение считается аномалией, если:
+Для каждого параметра рассчитывается нормированное отклонение:
 
 ```text
-abs(value - mean) > anomaly_sigma_threshold * std
+score = abs(value - mean) / std
 ```
 
-Если `std` почти нулевое, любое ненулевое отклонение от среднего тоже считается аномалией.
+Итоговый `anomaly_score` равен максимуму таких оценок по наблюдаемым параметрам.
+Эпоха может закрываться досрочно, если:
+
+```text
+anomaly_score >= anomaly_score_threshold
+```
+
+Если `std` почти нулевое, любое ненулевое отклонение от среднего считается сильной аномалией.
 
 ## Метрики
 
 Основные метрики безопасности:
 
-- `avg_vulnerability_window`
-- `p95_vulnerability_window`
-- `max_vulnerability_window`
+- `avg_commit_latency`
+- `p95_commit_latency`
+- `max_commit_latency`
 
 Дополнительные метрики накладных расходов:
 
@@ -154,14 +161,14 @@ abs(value - mean) > anomaly_sigma_threshold * std
 - `max_queue_depth`
 - `p95_queue_depth`
 - `throughput`
-- `lost_events`
+- `queue_over_capacity_count`
 - `avg_proof_hashes`
 - `avg_proof_bytes`
 
-Смысл окна уязвимости:
+Смысл задержки фиксации:
 
 ```text
-vulnerability_window = commit_time - event.arrival_time
+commit_latency = commit_time - event.arrival_time
 ```
 
 ## Основные параметры
@@ -171,14 +178,14 @@ vulnerability_window = commit_time - event.arrival_time
 | env | значение по умолчанию | смысл |
 | --- | ---: | --- |
 | `TELEMETRY_WINDOW_SIZE` | `5` | размер окна для детектирования аномалий |
-| `ANOMALY_SIGMA_THRESHOLD` | `3.0` | порог аномалии в единицах стандартного отклонения |
+| `ANOMALY_SCORE_THRESHOLD` | `3.0` | порог аномалии в единицах стандартного отклонения |
 | `CRITICALITY_THRESHOLD` | `0.95` | критичность, при которой адаптивная политика закрывает эпоху немедленно |
 | `MIN_EPOCH_EVENTS` | `0` | минимальное число событий в эпохе, если ограничение нужно |
 | `MAX_EPOCH_EVENTS` | `inf` | максимальное число событий в эпохе, если ограничение нужно |
-| `MIN_WINDOW_SECONDS` | `0` | минимальная длительность открытой эпохи в секундах |
-| `MAX_WINDOW_SECONDS` | `inf` | максимальная длительность открытой эпохи в секундах |
+| `MIN_EPOCH_DURATION_SECONDS` | `0` | минимальная длительность открытой эпохи в секундах |
+| `MAX_EPOCH_DURATION_SECONDS` | `inf` | максимальная длительность открытой эпохи в секундах |
 | `POLICY_CHANGE_THRESHOLD` | `0.15` | минимальное относительное изменение `target` для перенастройки |
-| `POLICY_ACK_TARGET` | `1.0` | нормальная задержка подтверждения записи |
+| `POLICY_ANCHOR_ACK_TARGET` | `1.0` | нормальная задержка подтверждения записи |
 
 ## Дополнительные параметры
 
@@ -186,18 +193,18 @@ vulnerability_window = commit_time - event.arrival_time
 
 | env | значение по умолчанию | смысл |
 | --- | ---: | --- |
-| `POLICY_ACK_LATENCY_SCALE` | `0.15` | сила реакции на ухудшение `ack_latency` |
-| `POLICY_ACK_LATENCY_CAP` | `0.20` | максимум увеличения `target` из-за `ack_latency` |
+| `POLICY_ANCHOR_ACK_LATENCY_SCALE` | `0.15` | сила реакции на ухудшение `anchor_ack_latency` |
+| `POLICY_ANCHOR_ACK_LATENCY_CAP` | `0.20` | максимум увеличения `target` из-за `anchor_ack_latency` |
 | `POLICY_CPU_LOAD_TRIGGER` | `0.8` | порог, после которого CPU влияет на `target` |
 | `POLICY_CPU_LOAD_SCALE` | `0.3` | чувствительность к загрузке CPU после порога |
 | `POLICY_CPU_LOAD_CAP` | `0.10` | максимум увеличения `target` из-за CPU |
-| `POLICY_QUEUE_FILL_TRIGGER` | `0.8` | порог, после которого очередь начинает уменьшать `target` |
-| `POLICY_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высокой очереди |
-| `POLICY_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
+| `POLICY_INPUT_QUEUE_FILL_TRIGGER` | `0.8` | порог, после которого очередь начинает уменьшать `target` |
+| `POLICY_INPUT_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высокой очереди |
+| `POLICY_INPUT_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
 | `POLICY_CPU_CLOSE_THRESHOLD` | `0.95` | жесткий порог раннего закрытия по CPU |
-| `SEGMENT_ACK_LATENCY` | `1.0` | значение `ack_latency` по умолчанию для сегмента без явного поля |
+| `SEGMENT_ANCHOR_ACK_LATENCY` | `1.0` | значение `anchor_ack_latency` по умолчанию для сегмента без явного поля |
 | `SEGMENT_CPU_LOAD` | `0.2` | значение `cpu_load` по умолчанию для сегмента без явного поля |
-| `SEGMENT_QUEUE_FILL` | `0.1` | значение `queue_fill` по умолчанию для сегмента без явного поля |
+| `SEGMENT_INPUT_QUEUE_FILL` | `0.1` | значение `input_queue_fill` по умолчанию для сегмента без явного поля |
 | `SIMULATOR_DATA_VALUE` | `1.0` | масштаб синтетического `data_value` |
 | `SIMULATOR_CRITICALITY_DEFAULT` | `0.1` | критичность обычного синтетического события |
 | `SIMULATOR_CRITICALITY_CRITICAL` | `1.0` | критичность синтетического критичного события |
@@ -209,8 +216,8 @@ vulnerability_window = commit_time - event.arrival_time
 Если заданы:
 - `min_epoch_events = 3`
 - `max_epoch_events = 50`
-- `min_window_seconds = 2`
-- `max_window_seconds = 6`
+- `min_epoch_duration_seconds = 2`
+- `max_epoch_duration_seconds = 6`
 
 то временные ограничения переводятся так:
 - минимальная временная граница: `2 * 5 = 10` событий;
@@ -227,10 +234,10 @@ vulnerability_window = commit_time - event.arrival_time
 Значения по умолчанию подобраны с приоритетом безопасности.
 
 Их смысл:
-- реакция на `ack_latency` и `cpu_load` ограничена, чтобы рост нагрузки не приводил к чрезмерному раздуванию эпох;
+- реакция на `anchor_ack_latency` и `cpu_load` ограничена, чтобы рост нагрузки не приводил к чрезмерному раздуванию эпох;
 - `policy_change_threshold` подавляет мелкие перестройки размера эпохи;
 - `criticality_threshold` и пороги `early close` делают политику чувствительной к критичным данным и явным аномалиям;
-- ограничения `min_epoch_events`, `max_epoch_events`, `min_window_seconds`, `max_window_seconds` по умолчанию не сужают диапазон и включаются только при явной настройке.
+- ограничения `min_epoch_events`, `max_epoch_events`, `min_epoch_duration_seconds`, `max_epoch_duration_seconds` по умолчанию не сужают диапазон и включаются только при явной настройке.
 
 При необходимости эти параметры можно изменить через env-переменные под конкретный экспериментальный сценарий.
 

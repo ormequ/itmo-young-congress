@@ -4,7 +4,5 @@ __pycache__/
 .coverage
 artifacts/
 .worktrees/
-presentation_draft.md
-presentation_speech.md
-speech.md
-questions.md
+*.md
+!README.md

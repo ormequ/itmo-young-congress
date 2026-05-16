@@ -9,25 +9,25 @@ from settings import load_settings
 @dataclass(frozen=True)
 class TelemetrySample:
     arrival_rate: float
-    ack_latency: float = 0.0
+    anchor_ack_latency: float = 0.0
     cpu_load: float = 0.0
-    queue_fill: float = 0.0
+    input_queue_fill: float = 0.0
     critical_event: bool = False
-    rolling_ack_mean: float = 0.0
-    rolling_ack_std: float = 0.0
+    rolling_anchor_ack_mean: float = 0.0
+    rolling_anchor_ack_std: float = 0.0
     rolling_cpu_mean: float = 0.0
     rolling_cpu_std: float = 0.0
-    rolling_queue_mean: float = 0.0
-    rolling_queue_std: float = 0.0
+    rolling_input_queue_mean: float = 0.0
+    rolling_input_queue_std: float = 0.0
     rolling_data_mean: float = 0.0
     rolling_data_std: float = 0.0
-    anomaly_detected: bool = False
-    data_criticality: float = 0.0
+    anomaly_score: float = 0.0
+    criticality_level: float = 0.0
 
 
 @dataclass(frozen=True)
 class EpochState:
-    event_count: int
+    epoch_event_count: int
     current_target: int
 
 
@@ -41,9 +41,9 @@ class PolicyDecision:
 class ArrivalSegment:
     duration: float
     rate: float
-    ack_latency: float = field(default_factory=lambda: load_settings().segment_ack_latency)
+    anchor_ack_latency: float = field(default_factory=lambda: load_settings().segment_anchor_ack_latency)
     cpu_load: float = field(default_factory=lambda: load_settings().segment_cpu_load)
-    queue_fill: float = field(default_factory=lambda: load_settings().segment_queue_fill)
+    input_queue_fill: float = field(default_factory=lambda: load_settings().segment_input_queue_fill)
     critical_every: int = 0
 
 
@@ -52,10 +52,10 @@ class ScenarioConfig:
     name: str
     duration: float
     queue_capacity: int
-    target_window: float
+    target_commit_latency: float
     segments: Tuple[ArrivalSegment, ...]
     telemetry_window_size: int = field(default_factory=lambda: load_settings().telemetry_window_size)
-    anomaly_sigma_threshold: float = field(default_factory=lambda: load_settings().anomaly_sigma_threshold)
+    anomaly_score_threshold: float = field(default_factory=lambda: load_settings().anomaly_score_threshold)
     criticality_threshold: float = field(default_factory=lambda: load_settings().criticality_threshold)
 
 
@@ -64,26 +64,26 @@ class Event:
     event_id: int
     arrival_time: float
     payload: bytes
-    ack_latency: float
+    anchor_ack_latency: float
     cpu_load: float
-    queue_fill: float
+    input_queue_fill: float
     critical: bool
     arrival_rate: float
     data_value: float = 0.0
-    data_criticality: float = 0.0
+    criticality_level: float = 0.0
 
     def with_arrival(self, arrival_time: float) -> "Event":
         return Event(
             event_id=self.event_id,
             arrival_time=arrival_time,
             payload=self.payload,
-            ack_latency=self.ack_latency,
+            anchor_ack_latency=self.anchor_ack_latency,
             cpu_load=self.cpu_load,
-            queue_fill=self.queue_fill,
+            input_queue_fill=self.input_queue_fill,
             critical=self.critical,
             arrival_rate=self.arrival_rate,
             data_value=self.data_value,
-            data_criticality=self.data_criticality,
+            criticality_level=self.criticality_level,
         )
 
 
@@ -99,14 +99,14 @@ class CommitRecord:
 
 @dataclass(frozen=True)
 class RunMetrics:
-    avg_vulnerability_window: float
-    p95_vulnerability_window: float
-    max_vulnerability_window: float
+    avg_commit_latency: float
+    p95_commit_latency: float
+    max_commit_latency: float
     commit_frequency: float
     max_queue_depth: int
     p95_queue_depth: float
     throughput: float
-    lost_events: int
+    queue_over_capacity_count: int
     avg_proof_hashes: float
     avg_proof_bytes: float
     signature_count: int

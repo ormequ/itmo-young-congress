@@ -14,19 +14,19 @@ class ReportingTests(unittest.TestCase):
             name="steady",
             duration=3.0,
             queue_capacity=20,
-            target_window=2.0,
-            segments=(ArrivalSegment(duration=3.0, rate=5.0, ack_latency=1.0),),
+            target_commit_latency=2.0,
+            segments=(ArrivalSegment(duration=3.0, rate=5.0, anchor_ack_latency=1.0),),
         )
         policies = {
             "fixed-nominal": FixedEpochPolicy(epoch_size=10),
             "adaptive": AdaptiveEpochPolicy(
-                target_window=2.0,
+                target_commit_latency=2.0,
                 min_epoch_events=2,
                 max_epoch_events=12,
-                min_window_seconds=0.0,
-                max_window_seconds=float("inf"),
+                min_epoch_duration_seconds=0.0,
+                max_epoch_duration_seconds=float("inf"),
                 change_threshold=0.1,
-                ack_target=1.0,
+                anchor_ack_target=1.0,
             ),
         }
 
@@ -38,7 +38,7 @@ class ReportingTests(unittest.TestCase):
             self.assertTrue(summary_path.exists())
             self.assertTrue((report_dir / "summary.csv").exists())
             self.assertTrue((report_dir / "summary.md").exists())
-            self.assertTrue((report_dir / "avg_window.svg").exists())
+            self.assertTrue((report_dir / "avg_commit_latency.svg").exists())
 
             rows = json.loads(summary_path.read_text(encoding="utf-8"))
             self.assertEqual(len(rows), 4)

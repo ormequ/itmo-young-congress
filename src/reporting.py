@@ -27,12 +27,13 @@ def run_batch(
                         "scenario": scenario.name,
                         "seed": seed,
                         "policy": policy_name,
-                        "avg_vulnerability_window": result.metrics.avg_vulnerability_window,
-                        "p95_vulnerability_window": result.metrics.p95_vulnerability_window,
-                        "max_vulnerability_window": result.metrics.max_vulnerability_window,
+                        "avg_commit_latency": result.metrics.avg_commit_latency,
+                        "p95_commit_latency": result.metrics.p95_commit_latency,
+                        "max_commit_latency": result.metrics.max_commit_latency,
                         "commit_frequency": result.metrics.commit_frequency,
                         "max_queue_depth": result.metrics.max_queue_depth,
                         "p95_queue_depth": result.metrics.p95_queue_depth,
+                        "queue_over_capacity_count": result.metrics.queue_over_capacity_count,
                         "throughput": result.metrics.throughput,
                         "avg_proof_bytes": result.metrics.avg_proof_bytes,
                         "signature_time_per_second": result.metrics.signature_time_per_second,
@@ -56,12 +57,13 @@ def _aggregate(rows: Sequence[dict]) -> List[dict]:
             {
                 "scenario": scenario,
                 "policy": policy,
-                "avg_vulnerability_window": sum(item["avg_vulnerability_window"] for item in group) / count,
-                "p95_vulnerability_window": sum(item["p95_vulnerability_window"] for item in group) / count,
-                "max_vulnerability_window": max(item["max_vulnerability_window"] for item in group),
+                "avg_commit_latency": sum(item["avg_commit_latency"] for item in group) / count,
+                "p95_commit_latency": sum(item["p95_commit_latency"] for item in group) / count,
+                "max_commit_latency": max(item["max_commit_latency"] for item in group),
                 "commit_frequency": sum(item["commit_frequency"] for item in group) / count,
                 "max_queue_depth": max(item["max_queue_depth"] for item in group),
                 "p95_queue_depth": sum(item["p95_queue_depth"] for item in group) / count,
+                "queue_over_capacity_count": sum(item["queue_over_capacity_count"] for item in group),
                 "throughput": sum(item["throughput"] for item in group) / count,
                 "avg_proof_bytes": sum(item["avg_proof_bytes"] for item in group) / count,
                 "signature_time_per_second": sum(item["signature_time_per_second"] for item in group) / count,
@@ -84,21 +86,21 @@ def build_report(summary_path: Path, report_dir: Path) -> Path:
 
     md_path = report_dir / "summary.md"
     md_lines = [
-        "| scenario | policy | avg_window | p95_window | max_window | commit_frequency | max_queue_depth | p95_queue_depth | throughput | avg_proof_bytes | signature_time_per_second |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| scenario | policy | avg_commit_latency | p95_commit_latency | max_commit_latency | commit_frequency | max_queue_depth | p95_queue_depth | queue_over_capacity_count | throughput | avg_proof_bytes | signature_time_per_second |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary:
         md_lines.append(
-            "| {scenario} | {policy} | {avg_vulnerability_window:.3f} | {p95_vulnerability_window:.3f} | {max_vulnerability_window:.3f} | "
-            "{commit_frequency:.3f} | {max_queue_depth} | {p95_queue_depth:.3f} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
+            "| {scenario} | {policy} | {avg_commit_latency:.3f} | {p95_commit_latency:.3f} | {max_commit_latency:.3f} | "
+            "{commit_frequency:.3f} | {max_queue_depth} | {p95_queue_depth:.3f} | {queue_over_capacity_count} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
             "{signature_time_per_second:.3f} |".format(
                 **row
             )
         )
     md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
-    svg_path = report_dir / "avg_window.svg"
-    max_value = max(row["avg_vulnerability_window"] for row in summary) or 1.0
+    svg_path = report_dir / "avg_commit_latency.svg"
+    max_value = max(row["avg_commit_latency"] for row in summary) or 1.0
     bar_width = 80
     gap = 20
     height = 50 + 40 * len(summary)
@@ -108,12 +110,12 @@ def build_report(summary_path: Path, report_dir: Path) -> Path:
     ]
     for index, row in enumerate(summary):
         y = 30 + index * 35
-        width = 20 + (row["avg_vulnerability_window"] / max_value) * 400
+        width = 20 + (row["avg_commit_latency"] / max_value) * 400
         label = f'{row["scenario"]}/{row["policy"]}'
         lines.append(f'<text x="10" y="{y + 12}">{label}</text>')
         lines.append(f'<rect x="220" y="{y}" width="{width:.1f}" height="20" fill="#1f77b4" />')
         lines.append(
-            f'<text x="{230 + width:.1f}" y="{y + 12}">{row["avg_vulnerability_window"]:.3f}</text>'
+            f'<text x="{230 + width:.1f}" y="{y + 12}">{row["avg_commit_latency"]:.3f}</text>'
         )
     lines.append("</svg>")
     svg_path.write_text("\n".join(lines), encoding="utf-8")
@@ -126,9 +128,9 @@ def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig
         type(segment)(
             duration=segment.duration,
             rate=rate,
-            ack_latency=segment.ack_latency,
+            anchor_ack_latency=segment.anchor_ack_latency,
             cpu_load=segment.cpu_load,
-            queue_fill=segment.queue_fill,
+            input_queue_fill=segment.input_queue_fill,
             critical_every=segment.critical_every,
         )
         for segment in scenario.segments
@@ -137,10 +139,10 @@ def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig
         name=f"{scenario.name}-stress-{rate:g}",
         duration=scenario.duration,
         queue_capacity=scenario.queue_capacity,
-        target_window=scenario.target_window,
+        target_commit_latency=scenario.target_commit_latency,
         segments=segments,
         telemetry_window_size=scenario.telemetry_window_size,
-        anomaly_sigma_threshold=scenario.anomaly_sigma_threshold,
+        anomaly_score_threshold=scenario.anomaly_score_threshold,
         criticality_threshold=scenario.criticality_threshold,
     )
 
@@ -165,8 +167,8 @@ def _phase_payload(scenario: ScenarioConfig) -> List[dict]:
                 "start": start,
                 "end": end,
                 "rate": segment.rate,
-                "ack_latency": segment.ack_latency,
-                "queue_fill": segment.queue_fill,
+                "anchor_ack_latency": segment.anchor_ack_latency,
+                "input_queue_fill": segment.input_queue_fill,
             }
         )
         current_time = end
@@ -175,17 +177,17 @@ def _phase_payload(scenario: ScenarioConfig) -> List[dict]:
     return phases
 
 
-def _commit_window_points(result, events) -> List[dict]:
+def _commit_latency_points(result, events) -> List[dict]:
     event_by_id = {event.event_id: event for event in events}
     points: List[dict] = []
     for commit in result.commits:
-        windows = [commit.commit_time - event_by_id[event_id].arrival_time for event_id in commit.event_ids]
+        latencies = [commit.commit_time - event_by_id[event_id].arrival_time for event_id in commit.event_ids]
         points.append(
             {
                 "time": commit.commit_time,
-                "avg_window": sum(windows) / len(windows),
-                "max_window": max(windows),
-                "event_count": len(commit.event_ids),
+                "avg_commit_latency": sum(latencies) / len(latencies),
+                "max_commit_latency": max(latencies),
+                "epoch_event_count": len(commit.event_ids),
             }
         )
     return points
@@ -195,21 +197,21 @@ def run_stress_test(
     scenario: ScenarioConfig,
     arrival_rates: Sequence[float],
     seeds: Sequence[int],
-    window_limit: float,
-    queue_fill_limit: float,
+    commit_latency_limit: float,
+    input_queue_fill_limit: float,
     commit_frequency_limit: float = float("inf"),
 ) -> Dict[str, dict]:
     policies = _stress_policies(scenario)
     summary: Dict[str, dict] = {}
-    queue_limit = scenario.queue_capacity * queue_fill_limit
+    queue_limit = scenario.queue_capacity * input_queue_fill_limit
 
     for policy_name, policy in policies.items():
         if policy_name.startswith("adaptive-no-"):
             continue
         safe_rate = 0.0
         safe_metrics = {
-            "avg_vulnerability_window": 0.0,
-            "max_vulnerability_window": 0.0,
+            "avg_commit_latency": 0.0,
+            "max_commit_latency": 0.0,
             "commit_frequency_at_safe_throughput": 0.0,
             "max_queue_depth_at_safe_throughput": 0.0,
             "avg_proof_bytes_at_safe_throughput": 0.0,
@@ -220,8 +222,8 @@ def run_stress_test(
         for rate in sorted(arrival_rates):
             stress_scenario = _scenario_with_rate(scenario, rate)
             results = [run_simulation(stress_scenario, policy, seed=seed) for seed in seeds]
-            avg_window = sum(result.metrics.avg_vulnerability_window for result in results) / len(results)
-            max_window = max(result.metrics.max_vulnerability_window for result in results)
+            avg_commit_latency = sum(result.metrics.avg_commit_latency for result in results) / len(results)
+            max_commit_latency = max(result.metrics.max_commit_latency for result in results)
             commit_frequency = sum(result.metrics.commit_frequency for result in results) / len(results)
             max_queue_depth = max(result.metrics.max_queue_depth for result in results)
             avg_proof_bytes = sum(result.metrics.avg_proof_bytes for result in results) / len(results)
@@ -229,15 +231,15 @@ def run_stress_test(
                 sum(result.metrics.signature_time_per_second for result in results) / len(results)
             )
             is_safe = (
-                max_window <= window_limit
+                max_commit_latency <= commit_latency_limit
                 and max_queue_depth <= queue_limit
                 and commit_frequency <= commit_frequency_limit
             )
             if is_safe:
                 safe_rate = rate
                 safe_metrics = {
-                    "avg_vulnerability_window": avg_window,
-                    "max_vulnerability_window": max_window,
+                    "avg_commit_latency": avg_commit_latency,
+                    "max_commit_latency": max_commit_latency,
                     "commit_frequency_at_safe_throughput": commit_frequency,
                     "max_queue_depth_at_safe_throughput": max_queue_depth,
                     "avg_proof_bytes_at_safe_throughput": avg_proof_bytes,
@@ -263,18 +265,18 @@ def run_stress_response(
     available = _stress_policies(scenario)
     events = generate_events(scenario, seed)
     traces: Dict[str, List[dict]] = {}
-    window_points: Dict[str, List[dict]] = {}
+    commit_latency_points: Dict[str, List[dict]] = {}
     for policy_name in policies:
         policy = available[policy_name]
         traces[policy_name] = run_simulation_trace(scenario, policy, seed=seed, events=events)
         result = run_simulation(scenario, policy, seed=seed, events=events)
-        window_points[policy_name] = _commit_window_points(result, events)
+        commit_latency_points[policy_name] = _commit_latency_points(result, events)
     return {
         "scenario": scenario.name,
         "seed": seed,
         "phases": _phase_payload(scenario),
         "policies": traces,
-        "window_points": window_points,
+        "commit_latency_points": commit_latency_points,
     }
 
 
@@ -296,9 +298,9 @@ def run_stress_capacity(
             points.append(
                 {
                     "arrival_rate": rate,
-                    "avg_vulnerability_window": sum(result.metrics.avg_vulnerability_window for result in results)
+                    "avg_commit_latency": sum(result.metrics.avg_commit_latency for result in results)
                     / len(results),
-                    "max_vulnerability_window": max(result.metrics.max_vulnerability_window for result in results),
+                    "max_commit_latency": max(result.metrics.max_commit_latency for result in results),
                     "commit_frequency": sum(result.metrics.commit_frequency for result in results) / len(results),
                     "max_queue_depth": max(result.metrics.max_queue_depth for result in results),
                     "avg_proof_bytes": sum(result.metrics.avg_proof_bytes for result in results) / len(results),

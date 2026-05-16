@@ -7,7 +7,7 @@ from policies import AdaptiveEpochPolicy, FixedEpochPolicy
 class FixedPolicyTests(unittest.TestCase):
     def test_closes_epoch_when_fixed_size_is_reached(self) -> None:
         policy = FixedEpochPolicy(epoch_size=3)
-        state = EpochState(event_count=3, current_target=3)
+        state = EpochState(epoch_event_count=3, current_target=3)
 
         decision = policy.evaluate(state, TelemetrySample(arrival_rate=10.0))
 
@@ -16,9 +16,9 @@ class FixedPolicyTests(unittest.TestCase):
 
     def test_keeps_same_target_regardless_of_telemetry(self) -> None:
         policy = FixedEpochPolicy(epoch_size=7)
-        state = EpochState(event_count=1, current_target=7)
+        state = EpochState(epoch_event_count=1, current_target=7)
 
-        decision = policy.evaluate(state, TelemetrySample(arrival_rate=100.0, queue_fill=0.99))
+        decision = policy.evaluate(state, TelemetrySample(arrival_rate=100.0, input_queue_fill=0.99))
 
         self.assertEqual(decision.next_target, 7)
 
@@ -26,15 +26,15 @@ class FixedPolicyTests(unittest.TestCase):
 class AdaptivePolicyTests(unittest.TestCase):
     def test_scales_target_from_arrival_rate(self) -> None:
         policy = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=2,
             max_epoch_events=20,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
-        state = EpochState(event_count=1, current_target=2)
+        state = EpochState(epoch_event_count=1, current_target=2)
 
         decision = policy.evaluate(state, TelemetrySample(arrival_rate=8.0))
 
@@ -43,16 +43,16 @@ class AdaptivePolicyTests(unittest.TestCase):
 
     def test_reduces_target_when_queue_is_near_capacity(self) -> None:
         policy = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=2,
             max_epoch_events=20,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
-        state = EpochState(event_count=1, current_target=10)
-        telemetry = TelemetrySample(arrival_rate=8.0, queue_fill=0.95)
+        state = EpochState(epoch_event_count=1, current_target=10)
+        telemetry = TelemetrySample(arrival_rate=8.0, input_queue_fill=0.95)
 
         decision = policy.evaluate(state, telemetry)
 
@@ -60,15 +60,15 @@ class AdaptivePolicyTests(unittest.TestCase):
 
     def test_closes_epoch_early_for_critical_events(self) -> None:
         policy = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=2,
             max_epoch_events=20,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
-        state = EpochState(event_count=1, current_target=10)
+        state = EpochState(epoch_event_count=1, current_target=10)
 
         decision = policy.evaluate(
             state,
@@ -77,97 +77,97 @@ class AdaptivePolicyTests(unittest.TestCase):
 
         self.assertTrue(decision.should_close)
 
-    def test_increases_target_when_ack_latency_degrades(self) -> None:
+    def test_increases_target_when_anchor_ack_latency_degrades(self) -> None:
         policy = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=2,
             max_epoch_events=20,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
-        state = EpochState(event_count=1, current_target=10)
+        state = EpochState(epoch_event_count=1, current_target=10)
 
         decision = policy.evaluate(
             state,
-            TelemetrySample(arrival_rate=8.0, ack_latency=3.1),
+            TelemetrySample(arrival_rate=8.0, anchor_ack_latency=3.1),
         )
 
         self.assertGreater(decision.next_target, state.current_target)
         self.assertFalse(decision.should_close)
 
-    def test_closes_epoch_on_rolling_anomaly(self) -> None:
+    def test_closes_epoch_on_high_anomaly_score(self) -> None:
         policy = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=2,
             max_epoch_events=20,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
-        state = EpochState(event_count=4, current_target=10)
+        state = EpochState(epoch_event_count=4, current_target=10)
 
         decision = policy.evaluate(
             state,
             TelemetrySample(
                 arrival_rate=8.0,
-                ack_latency=1.1,
-                rolling_ack_mean=1.0,
-                rolling_ack_std=0.02,
-                anomaly_detected=True,
+                anchor_ack_latency=1.1,
+                rolling_anchor_ack_mean=1.0,
+                rolling_anchor_ack_std=0.02,
+                anomaly_score=3.0,
             ),
         )
 
         self.assertTrue(decision.should_close)
 
-    def test_closes_epoch_on_high_data_criticality(self) -> None:
+    def test_closes_epoch_on_high_criticality_level(self) -> None:
         policy = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=2,
             max_epoch_events=20,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
-        state = EpochState(event_count=2, current_target=8)
+        state = EpochState(epoch_event_count=2, current_target=8)
 
         decision = policy.evaluate(
             state,
-            TelemetrySample(arrival_rate=8.0, data_criticality=0.95),
+            TelemetrySample(arrival_rate=8.0, criticality_level=0.95),
         )
 
         self.assertTrue(decision.should_close)
 
-    def test_applies_window_second_bounds_as_event_limits(self) -> None:
+    def test_applies_epoch_duration_bounds_as_event_limits(self) -> None:
         policy = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=0,
             max_epoch_events=float("inf"),
-            min_window_seconds=1.0,
-            max_window_seconds=3.0,
+            min_epoch_duration_seconds=1.0,
+            max_epoch_duration_seconds=3.0,
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
-        state = EpochState(event_count=1, current_target=2)
+        state = EpochState(epoch_event_count=1, current_target=2)
 
         decision = policy.evaluate(state, TelemetrySample(arrival_rate=5.0))
 
         self.assertEqual(decision.next_target, 10)
 
-    def test_prefers_stricter_of_event_and_window_bounds(self) -> None:
+    def test_prefers_stricter_of_event_and_duration_bounds(self) -> None:
         policy = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=8,
             max_epoch_events=12,
-            min_window_seconds=1.0,
-            max_window_seconds=3.0,
+            min_epoch_duration_seconds=1.0,
+            max_epoch_duration_seconds=3.0,
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
-        state = EpochState(event_count=1, current_target=2)
+        state = EpochState(epoch_event_count=1, current_target=2)
 
         decision = policy.evaluate(state, TelemetrySample(arrival_rate=5.0))
 

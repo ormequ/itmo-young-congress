@@ -75,9 +75,9 @@ def _aggregate_batch_rows(rows: list[dict]) -> list[dict]:
             {
                 "scenario": scenario,
                 "policy": policy,
-                "avg_vulnerability_window": sum(item["avg_vulnerability_window"] for item in group) / count,
-                "p95_vulnerability_window": sum(item.get("p95_vulnerability_window", 0.0) for item in group) / count,
-                "max_vulnerability_window": max(item["max_vulnerability_window"] for item in group),
+                "avg_commit_latency": sum(item["avg_commit_latency"] for item in group) / count,
+                "p95_commit_latency": sum(item.get("p95_commit_latency", 0.0) for item in group) / count,
+                "max_commit_latency": max(item["max_commit_latency"] for item in group),
                 "commit_frequency": sum(item["commit_frequency"] for item in group) / count,
                 "max_queue_depth": max(item["max_queue_depth"] for item in group),
                 "p95_queue_depth": sum(item.get("p95_queue_depth", 0.0) for item in group) / count,
@@ -127,11 +127,11 @@ def _step_series(points: list[dict], metric_key: str) -> tuple[list[float], list
 
 
 def _phase_label(phase: dict) -> str:
-    if phase["queue_fill"] >= 0.9 or phase["ack_latency"] >= 2.5:
+    if phase["input_queue_fill"] >= 0.9 or phase["anchor_ack_latency"] >= 2.5:
         return "Крит."
     if phase["rate"] >= 14:
         return "Пик"
-    if phase["rate"] <= 6 and phase["ack_latency"] <= 1.1:
+    if phase["rate"] <= 6 and phase["anchor_ack_latency"] <= 1.1:
         return "Восст."
     return "Переход"
 
@@ -220,19 +220,19 @@ def _plot_tradeoff(rows: list[dict], output_path: Path) -> None:
         if not policy_rows:
             continue
         x = [row["commit_frequency"] for row in policy_rows]
-        y = [row["avg_vulnerability_window"] for row in policy_rows]
+        y = [row["avg_commit_latency"] for row in policy_rows]
         ax.scatter(x, y, label=POLICY_LABELS.get(policy, policy), s=90, color=POLICY_COLORS.get(policy))
         for row in policy_rows:
             ax.annotate(
                 _short_scenario_name(row["scenario"]),
-                (row["commit_frequency"], row["avg_vulnerability_window"]),
+                (row["commit_frequency"], row["avg_commit_latency"]),
                 fontsize=9,
                 xytext=(5, 5),
                 textcoords="offset points",
             )
 
     ax.set_xlabel("Частота фиксаций")
-    ax.set_ylabel("Среднее окно уязвимости")
+    ax.set_ylabel("Средняя задержка фиксации")
     ax.legend(frameon=False)
     ax.grid(alpha=0.2, linestyle="--")
     fig.tight_layout()
@@ -247,17 +247,17 @@ def build_batch_plots(summary_path: Path, output_dir: Path) -> None:
 
     _plot_grouped_bars(
         summary,
-        "avg_vulnerability_window",
-        "Среднее окно уязвимости",
+        "avg_commit_latency",
+        "Средняя задержка фиксации",
         "Секунды",
-        output_dir / "avg_window.png",
+        output_dir / "avg_commit_latency.png",
     )
     _plot_grouped_bars(
         summary,
-        "max_vulnerability_window",
-        "Максимальное окно уязвимости",
+        "max_commit_latency",
+        "Максимальная задержка фиксации",
         "Секунды",
-        output_dir / "max_window.png",
+        output_dir / "max_commit_latency.png",
     )
     _plot_grouped_bars(
         summary,
@@ -271,7 +271,7 @@ def build_batch_plots(summary_path: Path, output_dir: Path) -> None:
         "p95_queue_depth",
         "95-й перцентиль глубины очереди",
         "События",
-        output_dir / "max_queue_depth.png",
+        output_dir / "p95_queue_depth.png",
     )
     _plot_grouped_bars(
         summary,
@@ -314,10 +314,10 @@ def build_stress_plots(summary_path: Path, output_dir: Path) -> None:
         "stress_commit_frequency.png",
     )
     plot_metric(
-        "max_vulnerability_window",
-        "Максимальное окно уязвимости при безопасной пропускной способности",
+        "max_commit_latency",
+        "Максимальная задержка фиксации при безопасной пропускной способности",
         "Секунды",
-        "stress_max_window.png",
+        "stress_max_commit_latency.png",
     )
     plot_metric(
         "avg_proof_bytes_at_safe_throughput",
@@ -336,8 +336,8 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     times = [point["time"] for point in points]
     next_targets = [point["next_target"] for point in points]
     arrival_rates = [point["arrival_rate"] for point in points]
-    queue_fill = [point["queue_fill"] for point in points]
-    ack_latency = [point["ack_latency"] for point in points]
+    input_queue_fill = [point["input_queue_fill"] for point in points]
+    anchor_ack_latency = [point["anchor_ack_latency"] for point in points]
     close_times = [point["time"] for point in points if point["should_close"]]
     close_targets = [point["next_target"] for point in points if point["should_close"]]
 
@@ -358,12 +358,12 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     axes[0].set_ylabel("Поток, evt/s")
     axes[0].grid(alpha=0.2, linestyle="--")
 
-    axes[1].step(times, queue_fill, where="post", color="#ff7f0e", linewidth=2.0)
+    axes[1].step(times, input_queue_fill, where="post", color="#ff7f0e", linewidth=2.0)
     axes[1].set_ylabel("Очередь")
     axes[1].grid(alpha=0.2, linestyle="--")
 
-    axes[2].step(times, ack_latency, where="post", color="#9467bd", linewidth=2.0)
-    axes[2].set_ylabel("Ack, с")
+    axes[2].step(times, anchor_ack_latency, where="post", color="#9467bd", linewidth=2.0)
+    axes[2].set_ylabel("Подтв. якоря, с")
     axes[2].set_xlabel("Время, с")
     axes[2].grid(alpha=0.2, linestyle="--")
 
@@ -386,7 +386,7 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
     _shade_phases(list(axes), phases)
     axes[0].step(times, [point["arrival_rate"] for point in reference_points], where="post", linewidth=2.5, color="#2ca02c")
     ack_axis = axes[0].twinx()
-    ack_axis.step(times, [point["ack_latency"] for point in reference_points], where="post", linewidth=2.0, color="#9467bd")
+    ack_axis.step(times, [point["anchor_ack_latency"] for point in reference_points], where="post", linewidth=2.0, color="#9467bd")
     axes[0].set_ylabel("Поток, событий/с")
     ack_axis.set_ylabel("Подтв., с")
     axes[0].legend(
@@ -435,7 +435,7 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
             )
             close_markers_added = True
 
-    axes[2].step(times, [point["queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
+    axes[2].step(times, [point["input_queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
     axes[2].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
     axes[2].text(times[-1], 0.92, "Порог раннего закрытия", ha="right", va="bottom", fontsize=10, color="#444444")
     axes[2].set_ylabel("Очередь")
@@ -456,7 +456,7 @@ def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.2), sharex=True)
     metrics = [
-        ("avg_vulnerability_window", "", "Среднее окно уязвимости, с"),
+        ("avg_commit_latency", "", "Средняя задержка фиксации, с"),
         ("commit_frequency", "", "Фиксаций в секунду"),
     ]
 
@@ -500,7 +500,7 @@ def build_stress_summary_table(summary_path: Path, output_path: Path) -> None:
             [
                 POLICY_LABELS[policy],
                 f"{point['arrival_rate']:.0f}",
-                f"{point['avg_vulnerability_window']:.2f}",
+                f"{point['avg_commit_latency']:.2f}",
                 f"{point['commit_frequency']:.2f}",
             ]
         )
@@ -509,7 +509,7 @@ def build_stress_summary_table(summary_path: Path, output_path: Path) -> None:
     ax.axis("off")
     table = ax.table(
         cellText=rows,
-        colLabels=["Политика", "Поток", "Среднее окно", "Фиксации/с"],
+        colLabels=["Политика", "Поток", "Средняя задержка", "Фиксации/с"],
         loc="center",
         cellLoc="center",
         colLoc="center",
@@ -556,8 +556,8 @@ def build_presentation_plots(
     # 1. Security overview.
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharex=True)
     for ax, metric_key, ylabel in [
-        (axes[0], "avg_vulnerability_window", "Среднее окно уязвимости, с"),
-        (axes[1], "p95_vulnerability_window", "P95 окна уязвимости, с"),
+        (axes[0], "avg_commit_latency", "Средняя задержка фиксации, с"),
+        (axes[1], "p95_commit_latency", "P95 задержки фиксации, с"),
     ]:
         for index, policy in enumerate(POLICY_ORDER):
             offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
@@ -578,7 +578,7 @@ def build_presentation_plots(
         ax.set_axisbelow(True)
     fig.legend(handles=legend_handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.02))
     fig.tight_layout()
-    fig.savefig(output_dir / "window_overview.png", dpi=180, bbox_inches="tight")
+    fig.savefig(output_dir / "commit_latency_overview.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
 
     # 2. Cost overview.
@@ -612,7 +612,7 @@ def build_presentation_plots(
     # 3. Stress summary table.
     fig, ax = plt.subplots(figsize=(12.5, 3.8))
     ax.axis("off")
-    headers = ["Политика", "Достигнутый поток", "Макс. окно", "Фиксаций/с"]
+    headers = ["Политика", "Достигнутый поток", "Макс. задержка", "Фиксаций/с"]
     body = []
     for policy in POLICY_ORDER:
         row = stress_summary.get(policy, {})
@@ -621,7 +621,7 @@ def build_presentation_plots(
             [
                 POLICY_LABELS[policy],
                 f"{row.get('safe_throughput', 0.0):.2f}" if is_safe else "не выдерживает максимум",
-                f"{row.get('max_vulnerability_window', 0.0):.2f}" if is_safe else "—",
+                f"{row.get('max_commit_latency', 0.0):.2f}" if is_safe else "—",
                 f"{row.get('commit_frequency_at_safe_throughput', 0.0):.2f}" if is_safe else "—",
             ]
         )
@@ -648,8 +648,8 @@ def build_presentation_plots(
     adaptive_points = adaptive_trace["points"]
     fixed_points = fixed_trace["points"]
     adaptive_times, adaptive_rates = _step_series(adaptive_points, "arrival_rate")
-    _, adaptive_ack = _step_series(adaptive_points, "ack_latency")
-    _, adaptive_queue = _step_series(adaptive_points, "queue_fill")
+    _, adaptive_ack = _step_series(adaptive_points, "anchor_ack_latency")
+    _, adaptive_queue = _step_series(adaptive_points, "input_queue_fill")
     _, adaptive_targets = _step_series(adaptive_points, "next_target")
     fixed_times, fixed_targets = _step_series(fixed_points, "next_target")
     close_times = [point["time"] for point in adaptive_points if point["should_close"]]
@@ -658,9 +658,9 @@ def build_presentation_plots(
     fig, axes = plt.subplots(3, 1, figsize=(14, 9), sharex=True)
     axes[0].step(adaptive_times, adaptive_rates, where="post", color="#2ca02c", linewidth=2.5, label="Входной поток")
     ack_axis = axes[0].twinx()
-    ack_axis.step(adaptive_times, adaptive_ack, where="post", color="#9467bd", linewidth=2.0, label="Ack latency")
+    ack_axis.step(adaptive_times, adaptive_ack, where="post", color="#9467bd", linewidth=2.0, label="Anchor ack latency")
     axes[0].set_ylabel("Событий/с")
-    ack_axis.set_ylabel("Ack, с")
+    ack_axis.set_ylabel("Подтв. якоря, с")
     axes[0].grid(alpha=0.2, linestyle="--")
     top_handles = [
         Line2D([0], [0], color="#2ca02c", lw=2.5, label="Входной поток"),

@@ -13,8 +13,8 @@ class CliTests(unittest.TestCase):
             "name": "steady",
             "duration": 3.0,
             "queue_capacity": 20,
-            "target_window": 2.0,
-            "segments": [{"duration": 3.0, "rate": 5.0, "ack_latency": 1.0}],
+            "target_commit_latency": 2.0,
+            "segments": [{"duration": 3.0, "rate": 5.0, "anchor_ack_latency": 1.0}],
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:

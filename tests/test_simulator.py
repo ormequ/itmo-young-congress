@@ -12,7 +12,7 @@ class GeneratorTests(unittest.TestCase):
             name="steady",
             duration=5.0,
             queue_capacity=20,
-            target_window=2.0,
+            target_commit_latency=2.0,
             segments=(ArrivalSegment(duration=5.0, rate=4.0),),
         )
 
@@ -28,20 +28,20 @@ class SimulatorTests(unittest.TestCase):
             name="burst",
             duration=4.0,
             queue_capacity=16,
-            target_window=2.0,
+            target_commit_latency=2.0,
             segments=(
-                ArrivalSegment(duration=2.0, rate=3.0, ack_latency=1.0),
-                ArrivalSegment(duration=2.0, rate=8.0, ack_latency=1.0),
+                ArrivalSegment(duration=2.0, rate=3.0, anchor_ack_latency=1.0),
+                ArrivalSegment(duration=2.0, rate=8.0, anchor_ack_latency=1.0),
             ),
         )
         adaptive = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=0,
             max_epoch_events=float("inf"),
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
 
         trace = run_simulation_trace(scenario, adaptive, seed=3)
@@ -50,13 +50,13 @@ class SimulatorTests(unittest.TestCase):
         self.assertTrue(any(point["should_close"] for point in trace))
         self.assertGreater(len({point["next_target"] for point in trace}), 1)
 
-    def test_fixed_policy_uses_ack_latency_as_vulnerability_window(self) -> None:
+    def test_fixed_policy_uses_anchor_ack_latency_as_commit_latency(self) -> None:
         scenario = ScenarioConfig(
             name="steady",
             duration=1.0,
             queue_capacity=20,
-            target_window=1.0,
-            segments=(ArrivalSegment(duration=1.0, rate=3.0, ack_latency=2.0),),
+            target_commit_latency=1.0,
+            segments=(ArrivalSegment(duration=1.0, rate=3.0, anchor_ack_latency=2.0),),
         )
         events = [
             Event(1, 0.0, b"a", 2.0, 0.2, 0.1, False, 3.0),
@@ -66,16 +66,16 @@ class SimulatorTests(unittest.TestCase):
 
         result = run_simulation(scenario, policy, events=events)
 
-        self.assertAlmostEqual(result.metrics.avg_vulnerability_window, 2.1, places=1)
-        self.assertAlmostEqual(result.metrics.max_vulnerability_window, 2.2, places=1)
+        self.assertAlmostEqual(result.metrics.avg_commit_latency, 2.1, places=1)
+        self.assertAlmostEqual(result.metrics.max_commit_latency, 2.2, places=1)
 
     def test_closed_epoch_contains_root_signature_metrics(self) -> None:
         scenario = ScenarioConfig(
             name="signed-root",
             duration=1.0,
             queue_capacity=20,
-            target_window=1.0,
-            segments=(ArrivalSegment(duration=1.0, rate=3.0, ack_latency=1.0),),
+            target_commit_latency=1.0,
+            segments=(ArrivalSegment(duration=1.0, rate=3.0, anchor_ack_latency=1.0),),
         )
         events = [
             Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 3.0),
@@ -101,17 +101,17 @@ class SimulatorTests(unittest.TestCase):
             name="critical",
             duration=3.0,
             queue_capacity=20,
-            target_window=2.0,
-            segments=(ArrivalSegment(duration=3.0, rate=5.0, ack_latency=1.0, critical_every=3),),
+            target_commit_latency=2.0,
+            segments=(ArrivalSegment(duration=3.0, rate=5.0, anchor_ack_latency=1.0, critical_every=3),),
         )
         adaptive = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=2,
             max_epoch_events=12,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
         fixed = FixedEpochPolicy(epoch_size=10)
 
@@ -125,26 +125,26 @@ class SimulatorTests(unittest.TestCase):
         adaptive_result = run_simulation(scenario, adaptive, events=events)
 
         self.assertGreaterEqual(len(adaptive_result.commits), 2)
-        self.assertLessEqual(adaptive_result.metrics.max_vulnerability_window, 2.0)
+        self.assertLessEqual(adaptive_result.metrics.max_commit_latency, 2.0)
 
     def test_adaptive_policy_closes_on_anomalous_storage_spike(self) -> None:
         scenario = ScenarioConfig(
             name="anomaly-spike",
             duration=5.0,
             queue_capacity=20,
-            target_window=2.0,
+            target_commit_latency=2.0,
             telemetry_window_size=3,
-            anomaly_sigma_threshold=2.5,
-            segments=(ArrivalSegment(duration=5.0, rate=5.0, ack_latency=1.0),),
+            anomaly_score_threshold=2.5,
+            segments=(ArrivalSegment(duration=5.0, rate=5.0, anchor_ack_latency=1.0),),
         )
         adaptive = AdaptiveEpochPolicy(
-            target_window=2.0,
+            target_commit_latency=2.0,
             min_epoch_events=2,
             max_epoch_events=12,
-            min_window_seconds=0.0,
-            max_window_seconds=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
             change_threshold=0.1,
-            ack_target=1.0,
+            anchor_ack_target=1.0,
         )
         fixed = FixedEpochPolicy(epoch_size=10)
         events = [
@@ -158,7 +158,7 @@ class SimulatorTests(unittest.TestCase):
         adaptive_result = run_simulation(scenario, adaptive, events=events)
 
         self.assertGreaterEqual(len(adaptive_result.commits), 2)
-        self.assertLessEqual(adaptive_result.metrics.max_vulnerability_window, 5.0)
+        self.assertLessEqual(adaptive_result.metrics.max_commit_latency, 5.0)
 
 
 if __name__ == "__main__":

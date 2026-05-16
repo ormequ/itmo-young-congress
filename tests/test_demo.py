@@ -11,7 +11,7 @@ class DemoTests(unittest.TestCase):
             name="demo",
             duration=2.0,
             queue_capacity=10,
-            target_window=1.0,
+            target_commit_latency=1.0,
             segments=(ArrivalSegment(duration=2.0, rate=4.0),),
         )
 

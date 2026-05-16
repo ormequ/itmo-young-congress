@@ -10,10 +10,10 @@ from reporting import build_report, run_batch, run_stress_capacity, run_stress_r
 from simulator import run_simulation, simulation_to_json
 
 
-# Default SLA for demo stress runs: maximum allowed vulnerability window.
-DEFAULT_DEMO_STRESS_WINDOW_LIMIT = 5.0
-# Default SLA for demo stress runs: allowed queue occupancy as a capacity fraction.
-DEFAULT_DEMO_STRESS_QUEUE_FILL_LIMIT = 0.9
+# Default SLA for demo stress runs: maximum allowed commit latency.
+DEFAULT_DEMO_STRESS_COMMIT_LATENCY_LIMIT = 5.0
+# Default SLA for demo stress runs: allowed input queue occupancy as a capacity fraction.
+DEFAULT_DEMO_STRESS_INPUT_QUEUE_FILL_LIMIT = 0.9
 # Default stress limit: maximum acceptable commit frequency under safe throughput.
 DEFAULT_DEMO_STRESS_COMMIT_FREQUENCY_LIMIT = 2.0
 
@@ -48,8 +48,8 @@ def _cmd_stress_test(args: argparse.Namespace) -> int:
         scenario=scenario,
         arrival_rates=arrival_rates,
         seeds=seeds,
-        window_limit=args.window_limit or DEFAULT_DEMO_STRESS_WINDOW_LIMIT,
-        queue_fill_limit=args.queue_fill_limit or DEFAULT_DEMO_STRESS_QUEUE_FILL_LIMIT,
+        commit_latency_limit=args.commit_latency_limit or DEFAULT_DEMO_STRESS_COMMIT_LATENCY_LIMIT,
+        input_queue_fill_limit=args.input_queue_fill_limit or DEFAULT_DEMO_STRESS_INPUT_QUEUE_FILL_LIMIT,
         commit_frequency_limit=args.commit_frequency_limit or DEFAULT_DEMO_STRESS_COMMIT_FREQUENCY_LIMIT,
     )
     write_json(Path(args.output_dir) / "stress_summary.json", summary)
@@ -100,9 +100,9 @@ def register_demo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
             "fixed-large",
             "adaptive",
             "adaptive-no-arrival-rate",
-            "adaptive-no-ack-latency",
+            "adaptive-no-anchor-ack-latency",
             "adaptive-no-cpu-load",
-            "adaptive-no-queue-fill",
+            "adaptive-no-input-queue-fill",
             "adaptive-no-early-close",
         ],
     )
@@ -135,10 +135,10 @@ def register_demo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
     stress_parser.add_argument("--arrival-rates", required=True)
     # Comma-separated seeds for repeated runs at every arrival-rate level.
     stress_parser.add_argument("--seeds", required=True)
-    # Optional SLA limit for max vulnerability window during safe-throughput search.
-    stress_parser.add_argument("--window-limit", type=float)
-    # Optional SLA limit for queue occupancy, expressed as a capacity fraction.
-    stress_parser.add_argument("--queue-fill-limit", type=float)
+    # Optional SLA limit for max commit latency during safe-throughput search.
+    stress_parser.add_argument("--commit-latency-limit", type=float)
+    # Optional SLA limit for input queue occupancy, expressed as a capacity fraction.
+    stress_parser.add_argument("--input-queue-fill-limit", type=float)
     # Optional limit for commit frequency; aggressive policies above it are rejected.
     stress_parser.add_argument("--commit-frequency-limit", type=float)
     # Directory where the stress summary JSON will be written.

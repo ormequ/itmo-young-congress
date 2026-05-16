@@ -30,9 +30,9 @@ class PlotResultsTests(unittest.TestCase):
                 "scenario": "steady",
                 "seed": 1,
                 "policy": "adaptive",
-                "avg_vulnerability_window": 1.2,
-                "p95_vulnerability_window": 1.6,
-                "max_vulnerability_window": 2.0,
+                "avg_commit_latency": 1.2,
+                "p95_commit_latency": 1.6,
+                "max_commit_latency": 2.0,
                 "commit_frequency": 0.5,
                 "max_queue_depth": 5,
                 "p95_queue_depth": 4.0,
@@ -43,9 +43,9 @@ class PlotResultsTests(unittest.TestCase):
                 "scenario": "steady",
                 "seed": 1,
                 "policy": "fixed-nominal",
-                "avg_vulnerability_window": 1.8,
-                "p95_vulnerability_window": 2.1,
-                "max_vulnerability_window": 2.5,
+                "avg_commit_latency": 1.8,
+                "p95_commit_latency": 2.1,
+                "max_commit_latency": 2.5,
                 "commit_frequency": 0.4,
                 "max_queue_depth": 8,
                 "p95_queue_depth": 6.0,
@@ -62,10 +62,10 @@ class PlotResultsTests(unittest.TestCase):
             output_dir = tmp / "plots"
             plot_results.build_batch_plots(summary_path, output_dir)
 
-            self.assertTrue((output_dir / "avg_window.png").exists())
-            self.assertTrue((output_dir / "max_window.png").exists())
+            self.assertTrue((output_dir / "avg_commit_latency.png").exists())
+            self.assertTrue((output_dir / "max_commit_latency.png").exists())
             self.assertTrue((output_dir / "commit_frequency.png").exists())
-            self.assertTrue((output_dir / "max_queue_depth.png").exists())
+            self.assertTrue((output_dir / "p95_queue_depth.png").exists())
             self.assertTrue((output_dir / "avg_proof_bytes.png").exists())
             self.assertTrue((output_dir / "tradeoff.png").exists())
 
@@ -74,16 +74,16 @@ class PlotResultsTests(unittest.TestCase):
         summary = {
             "adaptive": {
                 "safe_throughput": 12.0,
-                "avg_vulnerability_window": 2.0,
-                "max_vulnerability_window": 4.0,
+                "avg_commit_latency": 2.0,
+                "max_commit_latency": 4.0,
                 "commit_frequency_at_safe_throughput": 1.2,
                 "max_queue_depth_at_safe_throughput": 8.0,
                 "avg_proof_bytes_at_safe_throughput": 96.0,
             },
             "fixed-small": {
                 "safe_throughput": 10.0,
-                "avg_vulnerability_window": 1.8,
-                "max_vulnerability_window": 3.5,
+                "avg_commit_latency": 1.8,
+                "max_commit_latency": 3.5,
                 "commit_frequency_at_safe_throughput": 2.3,
                 "max_queue_depth_at_safe_throughput": 4.0,
                 "avg_proof_bytes_at_safe_throughput": 64.0,
@@ -100,7 +100,7 @@ class PlotResultsTests(unittest.TestCase):
 
             self.assertTrue((output_dir / "safe_throughput.png").exists())
             self.assertTrue((output_dir / "stress_commit_frequency.png").exists())
-            self.assertTrue((output_dir / "stress_max_window.png").exists())
+            self.assertTrue((output_dir / "stress_max_commit_latency.png").exists())
             self.assertTrue((output_dir / "stress_avg_proof_bytes.png").exists())
 
     def test_build_timeline_plots_writes_png_files(self) -> None:
@@ -112,9 +112,9 @@ class PlotResultsTests(unittest.TestCase):
                     "time": 0.2,
                     "policy": "adaptive",
                     "arrival_rate": 3.0,
-                    "ack_latency": 1.0,
-                    "queue_fill": 0.1,
-                    "event_count": 1,
+                    "anchor_ack_latency": 1.0,
+                    "input_queue_fill": 0.1,
+                    "epoch_event_count": 1,
                     "current_target": 2,
                     "next_target": 6,
                     "should_close": False,
@@ -123,9 +123,9 @@ class PlotResultsTests(unittest.TestCase):
                     "time": 1.4,
                     "policy": "adaptive",
                     "arrival_rate": 8.0,
-                    "ack_latency": 1.0,
-                    "queue_fill": 0.6,
-                    "event_count": 2,
+                    "anchor_ack_latency": 1.0,
+                    "input_queue_fill": 0.6,
+                    "epoch_event_count": 2,
                     "current_target": 6,
                     "next_target": 16,
                     "should_close": False,
@@ -134,9 +134,9 @@ class PlotResultsTests(unittest.TestCase):
                     "time": 1.9,
                     "policy": "adaptive",
                     "arrival_rate": 8.0,
-                    "ack_latency": 2.8,
-                    "queue_fill": 0.9,
-                    "event_count": 3,
+                    "anchor_ack_latency": 2.8,
+                    "input_queue_fill": 0.9,
+                    "epoch_event_count": 3,
                     "current_target": 16,
                     "next_target": 8,
                     "should_close": True,

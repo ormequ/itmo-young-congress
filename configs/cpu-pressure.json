@@ -2,21 +2,21 @@
   "name": "cpu-pressure",
   "duration": 10.0,
   "queue_capacity": 32,
-  "target_window": 2.0,
+  "target_commit_latency": 2.0,
   "segments": [
     {
       "duration": 5.0,
       "rate": 5.0,
-      "ack_latency": 1.0,
+      "anchor_ack_latency": 1.0,
       "cpu_load": 0.3,
-      "queue_fill": 0.2
+      "input_queue_fill": 0.2
     },
     {
       "duration": 5.0,
       "rate": 5.0,
-      "ack_latency": 1.2,
+      "anchor_ack_latency": 1.2,
       "cpu_load": 0.92,
-      "queue_fill": 0.4
+      "input_queue_fill": 0.4
     }
   ]
 }
