@@ -3,27 +3,32 @@
   "duration": 12.0,
   "queue_capacity": 24,
   "target_commit_latency": 2.0,
+  "epoch_buffer_budget_bytes": 4096,
+  "max_pending_anchors": 2,
   "segments": [
     {
       "duration": 4.0,
       "rate": 5.0,
       "anchor_ack_latency": 1.0,
       "cpu_load": 0.3,
-      "input_queue_fill": 0.25
+      "input_queue_fill": 0.25,
+      "payload_size_bytes": 128
     },
     {
       "duration": 4.0,
       "rate": 11.0,
       "anchor_ack_latency": 2.8,
       "cpu_load": 0.93,
-      "input_queue_fill": 0.92
+      "input_queue_fill": 0.92,
+      "payload_size_bytes": 384
     },
     {
       "duration": 4.0,
       "rate": 6.0,
       "anchor_ack_latency": 1.4,
       "cpu_load": 0.55,
-      "input_queue_fill": 0.5
+      "input_queue_fill": 0.5,
+      "payload_size_bytes": 192
     }
   ]
 }

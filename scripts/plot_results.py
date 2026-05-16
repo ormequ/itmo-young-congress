@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 
+FIGURE_DPI = 300
 POLICY_ORDER = ["adaptive", "fixed-small", "fixed-nominal", "fixed-large"]
 POLICY_COLORS = {
     "adaptive": "#1f77b4",
@@ -26,22 +27,34 @@ POLICY_COLORS = {
     "fixed-large": "#d62728",
 }
 POLICY_LABELS = {
-    "adaptive": "Адаптивная",
-    "fixed-small": "Фикс-малая",
-    "fixed-nominal": "Фикс-номинальная",
-    "fixed-large": "Фикс-большая",
+    "adaptive": "Adaptive",
+    "fixed-small": "Fixed-small",
+    "fixed-nominal": "Fixed-nominal",
+    "fixed-large": "Fixed-large",
+}
+ABLATION_POLICY_ORDER = ["adaptive", "adaptive-no-pending-anchors", "fixed-small", "fixed-nominal"]
+ABLATION_POLICY_LABELS = {
+    "adaptive": "Adaptive full",
+    "adaptive-no-pending-anchors": "Adaptive w/o anchor BP",
+    "fixed-small": "Fixed-small",
+    "fixed-nominal": "Fixed-nominal",
 }
 PRESENTATION_SCENARIOS = ["critical-event-injection", "storage-degradation", "queue-saturation"]
+COST_OVERVIEW_SCENARIOS = ["burst", "anchor-backpressure", "memory-pressure", "queue-saturation", "combined-stress"]
+COST_OVERVIEW_PANELS = [
+    ("commit_frequency", "Commit frequency, 1/s"),
+    ("queue_over_capacity_count", "Queue over-capacity count"),
+]
 
 
 def _apply_presentation_style() -> None:
     plt.rcParams.update(
         {
             "font.size": 12,
-            "axes.titlesize": 16,
-            "axes.labelsize": 13,
+            "axes.titlesize": 14,
+            "axes.labelsize": 14,
             "xtick.labelsize": 11,
-            "ytick.labelsize": 11,
+            "ytick.labelsize": 12,
             "legend.fontsize": 11,
         }
     )
@@ -49,15 +62,18 @@ def _apply_presentation_style() -> None:
 
 def _short_scenario_name(name: str) -> str:
     mapping = {
-        "anomaly-recovery": "аномалия",
-        "anomaly-spike": "аномалия",
-        "combined-stress": "комбинированный",
-        "critical-event-injection": "аномальные события",
-        "storage-degradation": "деградация хранилища",
-        "queue-saturation": "насыщение очереди",
-        "cpu-pressure": "давление CPU",
-        "burst": "всплеск нагрузки",
-        "steady": "стационарный режим",
+        "anomaly-recovery": "Anomaly recovery",
+        "anomaly-spike": "Anomaly spike",
+        "combined-stress": "Combined stress",
+        "critical-event-injection": "Critical events",
+        "critical-event": "Critical events",
+        "storage-degradation": "Storage degradation",
+        "memory-pressure": "Memory pressure",
+        "anchor-backpressure": "Anchor backpressure",
+        "queue-saturation": "Queue saturation",
+        "cpu-pressure": "CPU pressure",
+        "burst": "Burst traffic",
+        "steady": "Steady state",
     }
     return mapping.get(name, name)
 
@@ -81,12 +97,46 @@ def _aggregate_batch_rows(rows: list[dict]) -> list[dict]:
                 "commit_frequency": sum(item["commit_frequency"] for item in group) / count,
                 "max_queue_depth": max(item["max_queue_depth"] for item in group),
                 "p95_queue_depth": sum(item.get("p95_queue_depth", 0.0) for item in group) / count,
+                "queue_over_capacity_count": sum(item.get("queue_over_capacity_count", 0) for item in group),
+                "max_epoch_payload_bytes": max(item.get("max_epoch_payload_bytes", 0) for item in group),
+                "p95_epoch_payload_bytes": sum(item.get("p95_epoch_payload_bytes", 0.0) for item in group) / count,
+                "max_pending_anchor_count": max(item.get("max_pending_anchor_count", 0) for item in group),
+                "p95_pending_anchor_count": sum(item.get("p95_pending_anchor_count", 0.0) for item in group)
+                / count,
                 "avg_proof_bytes": sum(item["avg_proof_bytes"] for item in group) / count,
                 "signature_time_per_second": sum(item.get("signature_time_per_second", 0.0) for item in group)
                 / count,
+                "target_commit_latency": (
+                    sum(item.get("target_commit_latency", 0.0) for item in group) / count
+                    if any("target_commit_latency" in item for item in group)
+                    else None
+                ),
             }
         )
     summary.sort(key=lambda item: (item["scenario"], POLICY_ORDER.index(item["policy"])))
+    return summary
+
+
+def _aggregate_rows_for_policies(rows: list[dict], policy_order: list[str]) -> list[dict]:
+    rows = [row for row in rows if row["policy"] in policy_order]
+    grouped: dict[tuple[str, str], list[dict]] = {}
+    for row in rows:
+        grouped.setdefault((row["scenario"], row["policy"]), []).append(row)
+
+    summary = []
+    for (scenario, policy), group in grouped.items():
+        count = len(group)
+        summary.append(
+            {
+                "scenario": scenario,
+                "policy": policy,
+                "p95_pending_anchor_count": sum(item.get("p95_pending_anchor_count", 0.0) for item in group)
+                / count,
+                "commit_frequency": sum(item["commit_frequency"] for item in group) / count,
+                "p95_commit_latency": sum(item.get("p95_commit_latency", 0.0) for item in group) / count,
+            }
+        )
+    summary.sort(key=lambda item: (item["scenario"], policy_order.index(item["policy"])))
     return summary
 
 
@@ -118,6 +168,10 @@ def _build_legend_handles() -> list[Line2D]:
 
 
 def _metric_values(rows: list[dict], scenarios: list[str], policy: str, metric_key: str) -> list[float]:
+    if metric_key.endswith("_kib"):
+        source_key = f"{metric_key[:-4]}_bytes"
+        values = {(row["scenario"], row["policy"]): row.get(source_key, 0.0) / 1024 for row in rows}
+        return [values.get((scenario, policy), 0.0) for scenario in scenarios]
     values = {(row["scenario"], row["policy"]): row[metric_key] for row in rows}
     return [values.get((scenario, policy), 0.0) for scenario in scenarios]
 
@@ -126,14 +180,46 @@ def _step_series(points: list[dict], metric_key: str) -> tuple[list[float], list
     return [point["time"] for point in points], [point[metric_key] for point in points]
 
 
+def _fixed_nominal_target(points: list[dict], fallback: float = 0.0) -> float:
+    targets = [point.get("next_target", 0) for point in points if point.get("next_target", 0) > 0]
+    if not targets:
+        return fallback
+    return sorted(targets)[len(targets) // 2]
+
+
+def _commit_frequency_series(points: list[dict], window_seconds: float = 2.0) -> list[float]:
+    close_times = [point["time"] for point in points if point.get("should_close")]
+    values = []
+    for point in points:
+        start = point["time"] - window_seconds
+        count = sum(1 for close_time in close_times if start < close_time <= point["time"])
+        values.append(count / window_seconds)
+    return values
+
+
 def _phase_label(phase: dict) -> str:
     if phase["input_queue_fill"] >= 0.9 or phase["anchor_ack_latency"] >= 2.5:
-        return "Крит."
+        return "Critical"
     if phase["rate"] >= 14:
-        return "Пик"
+        return "Peak"
     if phase["rate"] <= 6 and phase["anchor_ack_latency"] <= 1.1:
-        return "Восст."
-    return "Переход"
+        return "Recovery"
+    return "Transition"
+
+
+def _target_commit_latency(rows: list[dict], scenarios: list[str]) -> float | None:
+    values = {
+        row.get("target_commit_latency")
+        for row in rows
+        if row["scenario"] in scenarios and row.get("target_commit_latency") not in (None, 0.0)
+    }
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _add_target_latency_line(ax: plt.Axes, target: float | None) -> None:
+    if target is None:
+        return
+    ax.axhline(target, color="#555555", linestyle="--", linewidth=1.2, label="Target commit latency")
 
 
 def _shade_phases(axes: list[plt.Axes], phases: list[dict]) -> None:
@@ -168,18 +254,15 @@ def _plot_grouped_bars(
     _apply_presentation_style()
     scenarios = sorted({row["scenario"] for row in rows})
     policies = [policy for policy in POLICY_ORDER if any(row["policy"] == policy for row in rows)]
-    values = {
-        (row["scenario"], row["policy"]): row[metric_key]
-        for row in rows
-    }
+    target_commit_latency = _target_commit_latency(rows, scenarios) if metric_key.endswith("commit_latency") else None
 
-    fig, ax = plt.subplots(figsize=(12, 6.5))
+    fig, ax = plt.subplots(figsize=(11, 5.8))
     width = 0.18 if len(policies) > 1 else 0.5
     x_positions = list(range(len(scenarios)))
 
     for index, policy in enumerate(policies):
         offsets = [x + (index - (len(policies) - 1) / 2) * width for x in x_positions]
-        heights = [values.get((scenario, policy), 0.0) for scenario in scenarios]
+        heights = _metric_values(rows, scenarios, policy, metric_key)
         bars = ax.bar(
             offsets,
             heights,
@@ -204,11 +287,109 @@ def _plot_grouped_bars(
     ax.set_ylabel(ylabel)
     ax.set_xticks(x_positions)
     ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios], rotation=15, ha="right")
+    _add_target_latency_line(ax, target_commit_latency)
     ax.legend(loc="upper center", ncol=len(policies), frameon=False, bbox_to_anchor=(0.5, 1.12))
     ax.grid(axis="y", alpha=0.2, linestyle="--")
     ax.set_axisbelow(True)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=180)
+    fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_grouped_bar_panels(
+    rows: list[dict],
+    panels: list[tuple[str, str]],
+    output_path: Path,
+    *,
+    scenarios: list[str] | None = None,
+    ncols: int = 3,
+) -> None:
+    _apply_presentation_style()
+    if scenarios is None:
+        scenarios = sorted({row["scenario"] for row in rows})
+    else:
+        available = {row["scenario"] for row in rows}
+        scenarios = [scenario for scenario in scenarios if scenario in available]
+    if not scenarios:
+        scenarios = sorted({row["scenario"] for row in rows})
+    policies = [policy for policy in POLICY_ORDER if any(row["policy"] == policy for row in rows)]
+    ncols = max(1, min(ncols, len(panels)))
+    nrows = (len(panels) + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 4.0 * nrows), squeeze=False, sharex=True)
+    width = 0.18 if len(policies) > 1 else 0.5
+    x_positions = list(range(len(scenarios)))
+    target_commit_latency = _target_commit_latency(rows, scenarios)
+
+    for panel_index, (metric_key, ylabel) in enumerate(panels):
+        ax = axes[panel_index // ncols][panel_index % ncols]
+        for policy_index, policy in enumerate(policies):
+            offsets = [x + (policy_index - (len(policies) - 1) / 2) * width for x in x_positions]
+            heights = _metric_values(rows, scenarios, policy, metric_key)
+            ax.bar(
+                offsets,
+                heights,
+                width=width,
+                color=POLICY_COLORS.get(policy),
+                edgecolor="white",
+                linewidth=0.8,
+            )
+        ax.set_ylabel(ylabel)
+        if metric_key.endswith("commit_latency"):
+            _add_target_latency_line(ax, target_commit_latency)
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels([_short_scenario_name(scenario) for scenario in scenarios], rotation=18, ha="right")
+        ax.grid(axis="y", alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+
+    for empty_index in range(len(panels), nrows * ncols):
+        axes[empty_index // ncols][empty_index % ncols].axis("off")
+
+    handles = _build_legend_handles()
+    if any(metric_key.endswith("commit_latency") for metric_key, _ in panels) and target_commit_latency is not None:
+        handles.append(Line2D([0], [0], color="#555555", lw=1.2, linestyle="--", label="Target commit latency"))
+    fig.legend(handles=handles, loc="upper center", ncol=min(len(handles), 5), frameon=False)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_ablation_panels(rows: list[dict], output_path: Path) -> None:
+    scenario_rows = [row for row in rows if row["scenario"] == "anchor-backpressure"]
+    if not scenario_rows:
+        return
+    summary = _aggregate_rows_for_policies(scenario_rows, ABLATION_POLICY_ORDER)
+    if not summary:
+        return
+    _apply_presentation_style()
+    panels = [
+        ("p95_pending_anchor_count", "P95 pending anchors"),
+        ("commit_frequency", "Commit frequency, 1/s"),
+        ("p95_commit_latency", "P95 commit latency, s"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(15.5, 4.5))
+    policies = [policy for policy in ABLATION_POLICY_ORDER if any(row["policy"] == policy for row in summary)]
+    x_positions = list(range(len(policies)))
+
+    for ax, (metric_key, ylabel) in zip(axes, panels):
+        heights = [
+            next((row[metric_key] for row in summary if row["policy"] == policy), 0.0)
+            for policy in policies
+        ]
+        ax.bar(
+            x_positions,
+            heights,
+            color=[POLICY_COLORS.get(policy, "#7f7f7f") for policy in policies],
+            edgecolor="white",
+            linewidth=0.8,
+        )
+        ax.set_ylabel(ylabel)
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels([ABLATION_POLICY_LABELS[policy] for policy in policies], rotation=18, ha="right")
+        ax.grid(axis="y", alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -231,12 +412,12 @@ def _plot_tradeoff(rows: list[dict], output_path: Path) -> None:
                 textcoords="offset points",
             )
 
-    ax.set_xlabel("Частота фиксаций")
-    ax.set_ylabel("Средняя задержка фиксации")
+    ax.set_xlabel("Commit frequency, 1/s")
+    ax.set_ylabel("Average commit latency, s")
     ax.legend(frameon=False)
     ax.grid(alpha=0.2, linestyle="--")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=180)
+    fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -248,44 +429,108 @@ def build_batch_plots(summary_path: Path, output_dir: Path) -> None:
     _plot_grouped_bars(
         summary,
         "avg_commit_latency",
-        "Средняя задержка фиксации",
-        "Секунды",
+        "Average commit latency",
+        "Seconds",
         output_dir / "avg_commit_latency.png",
     )
     _plot_grouped_bars(
         summary,
         "max_commit_latency",
-        "Максимальная задержка фиксации",
-        "Секунды",
+        "Max commit latency",
+        "Seconds",
         output_dir / "max_commit_latency.png",
     )
     _plot_grouped_bars(
         summary,
         "commit_frequency",
-        "Частота фиксаций",
-        "Фиксаций в секунду",
+        "Commit frequency",
+        "Commits per second",
         output_dir / "commit_frequency.png",
     )
     _plot_grouped_bars(
         summary,
         "p95_queue_depth",
-        "95-й перцентиль глубины очереди",
-        "События",
+        "P95 queue depth",
+        "Events",
         output_dir / "p95_queue_depth.png",
     )
     _plot_grouped_bars(
         summary,
         "avg_proof_bytes",
-        "Средний размер доказательства",
-        "Байты",
+        "Average proof size",
+        "Bytes",
         output_dir / "avg_proof_bytes.png",
     )
     _plot_tradeoff(summary, output_dir / "tradeoff.png")
+    _plot_grouped_bar_panels(
+        summary,
+        [
+            ("avg_commit_latency", "Average commit latency, s"),
+            ("p95_commit_latency", "P95 commit latency, s"),
+            ("max_commit_latency", "Max commit latency, s"),
+        ],
+        output_dir / "commit_latency_overview.png",
+    )
+    _plot_grouped_bar_panels(
+        summary,
+        COST_OVERVIEW_PANELS,
+        output_dir / "cost_and_stability_overview.png",
+        scenarios=COST_OVERVIEW_SCENARIOS,
+        ncols=2,
+    )
+    _plot_grouped_bar_panels(
+        summary,
+        [
+            ("commit_frequency", "Commit frequency, 1/s"),
+            ("signature_time_per_second", "Signature time per second, s/s"),
+            ("p95_queue_depth", "P95 queue depth"),
+            ("max_queue_depth", "Max queue depth"),
+            ("queue_over_capacity_count", "Queue over-capacity count"),
+        ],
+        output_dir / "cost_and_stability_full.png",
+    )
+    _plot_grouped_bar_panels(
+        summary,
+        [
+            ("max_epoch_payload_kib", "Max epoch payload, KiB"),
+            ("p95_epoch_payload_kib", "P95 epoch payload, KiB"),
+        ],
+        output_dir / "memory_pressure_overview.png",
+        scenarios=["burst", "memory-pressure", "combined-stress"],
+        ncols=2,
+    )
+    _plot_grouped_bar_panels(
+        summary,
+        [
+            ("p95_pending_anchor_count", "P95 pending anchors"),
+            ("p95_commit_latency", "P95 commit latency, s"),
+        ],
+        output_dir / "anchor_backpressure_overview.png",
+        scenarios=["storage-degradation", "anchor-backpressure", "combined-stress"],
+        ncols=2,
+    )
+    _plot_grouped_bar_panels(
+        summary,
+        [
+            ("max_pending_anchor_count", "Max pending anchors"),
+            ("p95_pending_anchor_count", "P95 pending anchors"),
+            ("commit_frequency", "Commit frequency, 1/s"),
+            ("p95_commit_latency", "P95 commit latency, s"),
+        ],
+        output_dir / "anchor_backpressure_full.png",
+        scenarios=["storage-degradation", "anchor-backpressure", "combined-stress"],
+        ncols=2,
+    )
+    _plot_ablation_panels(rows, output_dir / "anchor_backpressure_ablation.png")
 
 
 def build_stress_plots(summary_path: Path, output_dir: Path) -> None:
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     output_dir.mkdir(parents=True, exist_ok=True)
+    if "curves" in summary:
+        build_stress_capacity_plot(summary_path, output_dir / "stress_capacity.png")
+        build_stress_summary_table(summary_path, output_dir / "stress_summary_table.png")
+        return
     policies = [policy for policy in POLICY_ORDER if policy in summary]
 
     def plot_metric(metric_key: str, title: str, ylabel: str, filename: str) -> None:
@@ -303,33 +548,45 @@ def build_stress_plots(summary_path: Path, output_dir: Path) -> None:
         ax.grid(axis="y", alpha=0.2, linestyle="--")
         ax.set_axisbelow(True)
         fig.tight_layout()
-        fig.savefig(output_dir / filename, dpi=180)
+        fig.savefig(output_dir / filename, dpi=FIGURE_DPI, bbox_inches="tight")
         plt.close(fig)
 
-    plot_metric("safe_throughput", "Безопасная пропускная способность", "Событий в секунду", "safe_throughput.png")
+    plot_metric("safe_throughput", "Safe throughput", "Events per second", "safe_throughput.png")
     plot_metric(
         "commit_frequency_at_safe_throughput",
-        "Частота фиксаций при безопасной пропускной способности",
-        "Фиксаций в секунду",
+        "Commit frequency at safe throughput",
+        "Commits per second",
         "stress_commit_frequency.png",
     )
     plot_metric(
         "max_commit_latency",
-        "Максимальная задержка фиксации при безопасной пропускной способности",
-        "Секунды",
+        "Max commit latency at safe throughput",
+        "Seconds",
         "stress_max_commit_latency.png",
     )
     plot_metric(
         "avg_proof_bytes_at_safe_throughput",
-        "Средний размер доказательства при безопасной пропускной способности",
-        "Байты",
+        "Average proof size at safe throughput",
+        "Bytes",
         "stress_avg_proof_bytes.png",
     )
 
 
 def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     payload = json.loads(trace_path.read_text(encoding="utf-8"))
-    points = payload["points"]
+    comparison_points: list[dict] = []
+    comparison_policy = ""
+    scenario_name = payload.get("scenario", "")
+    if "points" in payload:
+        points = payload["points"]
+    else:
+        traces = payload["policies"]
+        points = traces.get("adaptive") or next(iter(traces.values()))
+        for policy in ["fixed-nominal", "fixed-small", "fixed-large"]:
+            if policy in traces:
+                comparison_policy = policy
+                comparison_points = traces[policy]
+                break
     output_dir.mkdir(parents=True, exist_ok=True)
     _apply_presentation_style()
 
@@ -337,38 +594,152 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     next_targets = [point["next_target"] for point in points]
     arrival_rates = [point["arrival_rate"] for point in points]
     input_queue_fill = [point["input_queue_fill"] for point in points]
+    memory_pressure = [point.get("memory_pressure", 0.0) for point in points]
+    pending_anchor_count = [point.get("pending_anchor_count", 0) for point in points]
+    max_pending_anchors = [point.get("max_pending_anchors", 0) for point in points]
     anchor_ack_latency = [point["anchor_ack_latency"] for point in points]
     close_times = [point["time"] for point in points if point["should_close"]]
     close_targets = [point["next_target"] for point in points if point["should_close"]]
 
     fig, ax = plt.subplots(figsize=(11, 5.5))
-    ax.step(times, next_targets, where="post", color=POLICY_COLORS["adaptive"], linewidth=2.5, label="Target эпохи")
+    ax.step(times, next_targets, where="post", color=POLICY_COLORS["adaptive"], linewidth=2.5, label="Target epoch size")
     if close_times:
-        ax.scatter(close_times, close_targets, color="#d62728", s=70, zorder=3, label="Закрытие эпохи")
-    ax.set_xlabel("Время, с")
-    ax.set_ylabel("Целевой размер эпохи, событий")
+        ax.scatter(close_times, close_targets, color="#d62728", s=70, zorder=3, label="Epoch close")
+    ax.set_xlabel("Time, s")
+    ax.set_ylabel("Target epoch size, events")
     ax.grid(alpha=0.2, linestyle="--")
     ax.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig(output_dir / "target_timeline.png", dpi=180)
+    fig.savefig(output_dir / "target_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
     fig, axes = plt.subplots(3, 1, figsize=(11, 8), sharex=True)
     axes[0].step(times, arrival_rates, where="post", color="#2ca02c", linewidth=2.0)
-    axes[0].set_ylabel("Поток, evt/s")
+    axes[0].set_ylabel("Input rate, events/s")
     axes[0].grid(alpha=0.2, linestyle="--")
 
     axes[1].step(times, input_queue_fill, where="post", color="#ff7f0e", linewidth=2.0)
-    axes[1].set_ylabel("Очередь")
+    axes[1].set_ylabel("Input queue fill")
     axes[1].grid(alpha=0.2, linestyle="--")
 
     axes[2].step(times, anchor_ack_latency, where="post", color="#9467bd", linewidth=2.0)
-    axes[2].set_ylabel("Подтв. якоря, с")
-    axes[2].set_xlabel("Время, с")
+    axes[2].set_ylabel("Anchor ack latency, s")
+    axes[2].set_xlabel("Time, s")
     axes[2].grid(alpha=0.2, linestyle="--")
 
     fig.tight_layout()
-    fig.savefig(output_dir / "telemetry_timeline.png", dpi=180)
+    fig.savefig(output_dir / "telemetry_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
+    plt.close(fig)
+
+    fig, axes = plt.subplots(4, 1, figsize=(13, 10.5), sharex=True)
+    axes[0].step(times, arrival_rates, where="post", color="#2ca02c", linewidth=2.3, label="Input rate")
+    ack_axis = axes[0].twinx()
+    ack_axis.step(times, anchor_ack_latency, where="post", color="#9467bd", linewidth=2.0, label="Anchor ack")
+    axes[0].set_ylabel("evt/s")
+    ack_axis.set_ylabel("Anchor ack latency, s")
+    axes[0].legend(
+        handles=[
+            Line2D([0], [0], color="#2ca02c", lw=2.3, label="Input rate"),
+            Line2D([0], [0], color="#9467bd", lw=2.0, label="Anchor ack latency"),
+        ],
+        frameon=False,
+        loc="upper left",
+    )
+
+    axes[1].step(
+        times,
+        next_targets,
+        where="post",
+        color=POLICY_COLORS["adaptive"],
+        linewidth=2.5,
+        label="Adaptive target",
+    )
+    if comparison_points:
+        axes[1].step(
+            [point["time"] for point in comparison_points],
+            [point["next_target"] for point in comparison_points],
+            where="post",
+            color=POLICY_COLORS.get(comparison_policy, "#666666"),
+            linewidth=2.0,
+            label=POLICY_LABELS.get(comparison_policy, comparison_policy),
+        )
+    if close_times:
+        axes[1].scatter(close_times, close_targets, color="#d62728", s=52, zorder=3, label="Epoch close")
+    axes[1].legend(frameon=False, loc="upper left")
+    axes[1].set_ylabel("Target epoch size, events")
+
+    axes[2].step(times, input_queue_fill, where="post", color="#ff7f0e", linewidth=2.2, label="Input queue fill")
+    axes[2].step(times, memory_pressure, where="post", color="#8c564b", linewidth=2.2, label="Memory pressure")
+    axes[2].axhline(0.9, color="#555555", linestyle="--", linewidth=1.2, label="Queue close threshold")
+    axes[2].axhline(1.0, color="#d62728", linestyle="--", linewidth=1.2, label="Memory hard-close threshold")
+    axes[2].set_ylabel("Constraints")
+    axes[2].legend(frameon=False, ncol=4, loc="upper left")
+
+    axes[3].step(times, pending_anchor_count, where="post", color="#17becf", linewidth=2.3, label="Pending anchor count")
+    finite_anchor_limits = [value for value in max_pending_anchors if value != float("inf")]
+    if finite_anchor_limits:
+        axes[3].axhline(max(finite_anchor_limits), color="#555555", linestyle="--", linewidth=1.2, label="Max pending anchors")
+    axes[3].set_ylabel("Pending anchors")
+    axes[3].set_xlabel("Time, s")
+    axes[3].legend(frameon=False, loc="upper left")
+
+    for ax in axes:
+        ax.grid(alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(output_dir / "adaptation_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
+    plt.close(fig)
+
+    if scenario_name not in {"anchor-backpressure", "storage-degradation"}:
+        return
+
+    anchor_ack_target = payload.get("anchor_ack_target", 1.0)
+    if "phases" in payload:
+        phase_targets = [phase.get("anchor_ack_target") for phase in payload["phases"] if phase.get("anchor_ack_target")]
+        if phase_targets:
+            anchor_ack_target = phase_targets[0]
+    fixed_nominal_target = _fixed_nominal_target(comparison_points, fallback=next_targets[0] if next_targets else 0.0)
+    commit_frequency = _commit_frequency_series(points)
+
+    fig, axes = plt.subplots(4, 1, figsize=(12.5, 10.2), sharex=True)
+    axes[0].step(times, anchor_ack_latency, where="post", color="#9467bd", linewidth=2.2, label="Anchor ack latency")
+    axes[0].axhline(anchor_ack_target, color="#555555", linestyle="--", linewidth=1.2, label="Anchor ack target")
+    axes[0].set_ylabel("Anchor ack latency, s")
+    axes[0].legend(frameon=False, loc="upper left")
+
+    axes[1].step(times, pending_anchor_count, where="post", color="#17becf", linewidth=2.2, label="Pending anchor count")
+    finite_anchor_limits = [value for value in max_pending_anchors if value != float("inf")]
+    if finite_anchor_limits:
+        axes[1].axhline(max(finite_anchor_limits), color="#555555", linestyle="--", linewidth=1.2, label="Max pending anchors")
+    axes[1].set_ylabel("Pending anchor count")
+    axes[1].legend(frameon=False, loc="upper left")
+
+    axes[2].step(times, next_targets, where="post", color=POLICY_COLORS["adaptive"], linewidth=2.4, label="Adaptive target epoch size")
+    if fixed_nominal_target:
+        axes[2].axhline(fixed_nominal_target, color=POLICY_COLORS["fixed-nominal"], linestyle="--", linewidth=1.4, label="Fixed-nominal target")
+    axes[2].set_ylabel("Target epoch size")
+    axes[2].legend(frameon=False, loc="upper left")
+
+    axes[3].step(times, commit_frequency, where="post", color="#7f7f7f", linewidth=2.2, label="Local commit frequency")
+    if close_times:
+        for index, close_time in enumerate(close_times):
+            axes[3].axvline(
+                close_time,
+                color="#d62728",
+                linestyle="--",
+                linewidth=0.9,
+                alpha=0.45,
+                label="Root commit" if index == 0 else None,
+            )
+    axes[3].set_ylabel("Local commit frequency, 1/s")
+    axes[3].set_xlabel("Time, s")
+    axes[3].legend(frameon=False, loc="upper left")
+
+    for ax in axes:
+        ax.grid(alpha=0.2, linestyle="--")
+        ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(output_dir / "backpressure_response_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -387,12 +758,12 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
     axes[0].step(times, [point["arrival_rate"] for point in reference_points], where="post", linewidth=2.5, color="#2ca02c")
     ack_axis = axes[0].twinx()
     ack_axis.step(times, [point["anchor_ack_latency"] for point in reference_points], where="post", linewidth=2.0, color="#9467bd")
-    axes[0].set_ylabel("Поток, событий/с")
-    ack_axis.set_ylabel("Подтв., с")
+    axes[0].set_ylabel("Input rate, events/s")
+    ack_axis.set_ylabel("Anchor ack latency, s")
     axes[0].legend(
         handles=[
-            Line2D([0], [0], color="#2ca02c", lw=2.5, label="Входной поток"),
-            Line2D([0], [0], color="#9467bd", lw=2.0, label="Задержка подтверждения"),
+            Line2D([0], [0], color="#2ca02c", lw=2.5, label="Input rate"),
+            Line2D([0], [0], color="#9467bd", lw=2.0, label="Anchor ack latency"),
         ],
         frameon=False,
         loc="upper left",
@@ -413,7 +784,7 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
             label=POLICY_LABELS[policy],
         )
 
-    axes[1].set_ylabel("Размер эпохи")
+    axes[1].set_ylabel("Target epoch size, events")
     axes[1].legend(frameon=False, ncol=4, loc="upper left")
 
     close_markers_added = False
@@ -437,15 +808,15 @@ def build_stress_response_plot(summary_path: Path, output_path: Path) -> None:
 
     axes[2].step(times, [point["input_queue_fill"] for point in reference_points], where="post", linewidth=2.4, color="#ff7f0e")
     axes[2].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
-    axes[2].text(times[-1], 0.92, "Порог раннего закрытия", ha="right", va="bottom", fontsize=10, color="#444444")
-    axes[2].set_ylabel("Очередь")
-    axes[2].set_xlabel("Время, с")
+    axes[2].text(times[-1], 0.92, "Early-close threshold", ha="right", va="bottom", fontsize=10, color="#444444")
+    axes[2].set_ylabel("Input queue fill")
+    axes[2].set_xlabel("Time, s")
 
     for ax in axes:
         ax.grid(alpha=0.2, linestyle="--")
         ax.set_axisbelow(True)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -456,17 +827,17 @@ def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.2), sharex=True)
     metrics = [
-        ("avg_commit_latency", "", "Средняя задержка фиксации, с"),
-        ("commit_frequency", "", "Фиксаций в секунду"),
+        ("p95_commit_latency", "P95 commit latency, s"),
+        ("p95_queue_depth", "P95 queue depth, events"),
     ]
 
-    for ax, (metric_key, title, ylabel) in zip(axes, metrics):
+    for ax, (metric_key, ylabel) in zip(axes, metrics):
         for policy in POLICY_ORDER:
             if policy not in curves:
                 continue
             points = curves[policy]
             x_values = [point["arrival_rate"] for point in points]
-            y_values = [point[metric_key] for point in points]
+            y_values = [point.get(metric_key, 0.0) for point in points]
             ax.plot(
                 x_values,
                 y_values,
@@ -476,40 +847,53 @@ def build_stress_capacity_plot(summary_path: Path, output_path: Path) -> None:
                 color=POLICY_COLORS[policy],
                 label=POLICY_LABELS[policy],
             )
-        ax.set_xlabel("Входной поток, событий/с")
+            unsafe_x = [point["arrival_rate"] for point in points if not point.get("is_safe", True)]
+            unsafe_y = [point.get(metric_key, 0.0) for point in points if not point.get("is_safe", True)]
+            if unsafe_x:
+                ax.scatter(unsafe_x, unsafe_y, marker="x", s=75, color=POLICY_COLORS[policy], linewidths=2.0)
+        ax.set_xlabel("Input rate, events/s")
         ax.set_ylabel(ylabel)
         ax.grid(alpha=0.2, linestyle="--")
         ax.set_axisbelow(True)
     axes[0].legend(frameon=False, ncol=2, loc="upper left")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
 def build_stress_summary_table(summary_path: Path, output_path: Path) -> None:
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
     curves = payload["curves"]
+    policy_summaries = payload.get("policies", {})
     _apply_presentation_style()
 
     rows = []
     for policy in POLICY_ORDER:
         if policy not in curves or not curves[policy]:
             continue
-        point = curves[policy][-1]
+        safe_point = policy_summaries.get(policy, {}).get("safe_point")
+        if safe_point is None:
+            safe_points = [point for point in curves[policy] if point.get("is_safe", True)]
+            safe_point = safe_points[-1] if safe_points else None
+        safe_throughput = policy_summaries.get(policy, {}).get(
+            "safe_throughput",
+            safe_point["arrival_rate"] if safe_point else 0.0,
+        )
         rows.append(
             [
                 POLICY_LABELS[policy],
-                f"{point['arrival_rate']:.0f}",
-                f"{point['avg_commit_latency']:.2f}",
-                f"{point['commit_frequency']:.2f}",
+                f"{safe_throughput:.0f}" if safe_point else "0",
+                f"{safe_point.get('p95_commit_latency', 0.0):.2f}" if safe_point else "—",
+                f"{safe_point.get('commit_frequency', 0.0):.2f}" if safe_point else "—",
+                f"{safe_point.get('p95_queue_depth', 0.0):.1f}" if safe_point else "—",
             ]
         )
 
-    fig, ax = plt.subplots(figsize=(10.5, 3.6))
+    fig, ax = plt.subplots(figsize=(11.5, 3.8))
     ax.axis("off")
     table = ax.table(
         cellText=rows,
-        colLabels=["Политика", "Поток", "Средняя задержка", "Фиксации/с"],
+        colLabels=["Policy", "Safe throughput", "P95 latency", "Commits/s", "P95 queue"],
         loc="center",
         cellLoc="center",
         colLoc="center",
@@ -527,7 +911,7 @@ def build_stress_summary_table(summary_path: Path, output_path: Path) -> None:
             cell.set_facecolor("#f8f9fa")
         cell.set_edgecolor("#c7cdd6")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -556,8 +940,8 @@ def build_presentation_plots(
     # 1. Security overview.
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharex=True)
     for ax, metric_key, ylabel in [
-        (axes[0], "avg_commit_latency", "Средняя задержка фиксации, с"),
-        (axes[1], "p95_commit_latency", "P95 задержки фиксации, с"),
+        (axes[0], "avg_commit_latency", "Average commit latency, s"),
+        (axes[1], "p95_commit_latency", "P95 commit latency, s"),
     ]:
         for index, policy in enumerate(POLICY_ORDER):
             offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
@@ -578,14 +962,14 @@ def build_presentation_plots(
         ax.set_axisbelow(True)
     fig.legend(handles=legend_handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.02))
     fig.tight_layout()
-    fig.savefig(output_dir / "commit_latency_overview.png", dpi=180, bbox_inches="tight")
+    fig.savefig(output_dir / "commit_latency_overview.png", dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
     # 2. Cost overview.
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharex=True)
     for ax, metric_key, title, ylabel in [
-        (axes[0], "commit_frequency", "", "Фиксаций в секунду"),
-        (axes[1], "p95_queue_depth", "", "Очередь (p95), событий"),
+        (axes[0], "commit_frequency", "", "Commit frequency, 1/s"),
+        (axes[1], "p95_queue_depth", "", "P95 queue depth, events"),
     ]:
         for index, policy in enumerate(POLICY_ORDER):
             offsets = [x + (index - (len(POLICY_ORDER) - 1) / 2) * width for x in x_positions]
@@ -606,13 +990,13 @@ def build_presentation_plots(
         ax.set_axisbelow(True)
     fig.legend(handles=legend_handles, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 1.02))
     fig.tight_layout()
-    fig.savefig(output_dir / "cost_overview.png", dpi=180, bbox_inches="tight")
+    fig.savefig(output_dir / "cost_overview.png", dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
     # 3. Stress summary table.
     fig, ax = plt.subplots(figsize=(12.5, 3.8))
     ax.axis("off")
-    headers = ["Политика", "Достигнутый поток", "Макс. задержка", "Фиксаций/с"]
+    headers = ["Policy", "Safe throughput", "Max latency", "Commits/s"]
     body = []
     for policy in POLICY_ORDER:
         row = stress_summary.get(policy, {})
@@ -620,7 +1004,7 @@ def build_presentation_plots(
         body.append(
             [
                 POLICY_LABELS[policy],
-                f"{row.get('safe_throughput', 0.0):.2f}" if is_safe else "не выдерживает максимум",
+                f"{row.get('safe_throughput', 0.0):.2f}" if is_safe else "unsafe",
                 f"{row.get('max_commit_latency', 0.0):.2f}" if is_safe else "—",
                 f"{row.get('commit_frequency_at_safe_throughput', 0.0):.2f}" if is_safe else "—",
             ]
@@ -635,13 +1019,13 @@ def build_presentation_plots(
             cell.set_text_props(weight="bold")
         elif row_index == 1:
             cell.set_facecolor("#d9edf7")
-        elif body[row_index - 1][1] == "не выдерживает максимум":
+        elif body[row_index - 1][1] == "unsafe":
             cell.set_facecolor("#f8d7da")
         else:
             cell.set_facecolor("#f8f9fa")
         cell.set_edgecolor("#c7cdd6")
     fig.tight_layout()
-    fig.savefig(output_dir / "stress_summary_table.png", dpi=180, bbox_inches="tight")
+    fig.savefig(output_dir / "stress_summary_table.png", dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
     # 4. Dynamic adaptation timeline.
@@ -656,34 +1040,41 @@ def build_presentation_plots(
     close_targets = [point["next_target"] for point in adaptive_points if point["should_close"]]
 
     fig, axes = plt.subplots(3, 1, figsize=(14, 9), sharex=True)
-    axes[0].step(adaptive_times, adaptive_rates, where="post", color="#2ca02c", linewidth=2.5, label="Входной поток")
+    axes[0].step(adaptive_times, adaptive_rates, where="post", color="#2ca02c", linewidth=2.5, label="Input rate")
     ack_axis = axes[0].twinx()
     ack_axis.step(adaptive_times, adaptive_ack, where="post", color="#9467bd", linewidth=2.0, label="Anchor ack latency")
-    axes[0].set_ylabel("Событий/с")
-    ack_axis.set_ylabel("Подтв. якоря, с")
+    axes[0].set_ylabel("events/s")
+    ack_axis.set_ylabel("Anchor ack latency, s")
     axes[0].grid(alpha=0.2, linestyle="--")
     top_handles = [
-        Line2D([0], [0], color="#2ca02c", lw=2.5, label="Входной поток"),
-        Line2D([0], [0], color="#9467bd", lw=2.0, label="Задержка подтверждения"),
+        Line2D([0], [0], color="#2ca02c", lw=2.5, label="Input rate"),
+        Line2D([0], [0], color="#9467bd", lw=2.0, label="Anchor ack latency"),
     ]
     axes[0].legend(handles=top_handles, frameon=False, loc="upper left")
 
     axes[1].step(adaptive_times, adaptive_targets, where="post", color=POLICY_COLORS["adaptive"], linewidth=2.8, label="Adaptive")
-    axes[1].step(fixed_times, fixed_targets, where="post", color=POLICY_COLORS["fixed-small"], linewidth=2.4, label="Fixed-S")
+    axes[1].step(
+        fixed_times,
+        fixed_targets,
+        where="post",
+        color=POLICY_COLORS["fixed-small"],
+        linewidth=2.4,
+        label="Fixed-small",
+    )
     if close_times:
-        axes[1].scatter(close_times, close_targets, color="#d62728", s=60, zorder=3, label="Закрытие эпохи")
-    axes[1].set_ylabel("Размер эпохи")
+        axes[1].scatter(close_times, close_targets, color="#d62728", s=60, zorder=3, label="Epoch close")
+    axes[1].set_ylabel("Target epoch size, events")
     axes[1].grid(alpha=0.2, linestyle="--")
     axes[1].legend(frameon=False, ncol=3, loc="upper left")
 
     axes[2].step(adaptive_times, adaptive_queue, where="post", color="#ff7f0e", linewidth=2.4)
     axes[2].axhline(0.9, color="#444444", linestyle="--", linewidth=1.4)
-    axes[2].text(adaptive_times[-1], 0.92, "Порог early close", ha="right", va="bottom", fontsize=10, color="#444444")
-    axes[2].set_ylabel("Очередь")
-    axes[2].set_xlabel("Время, с")
+    axes[2].text(adaptive_times[-1], 0.92, "Early-close threshold", ha="right", va="bottom", fontsize=10, color="#444444")
+    axes[2].set_ylabel("Input queue fill")
+    axes[2].set_xlabel("Time, s")
     axes[2].grid(alpha=0.2, linestyle="--")
     fig.tight_layout()
-    fig.savefig(output_dir / "adaptation_timeline.png", dpi=180, bbox_inches="tight")
+    fig.savefig(output_dir / "adaptation_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
 

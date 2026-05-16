@@ -1,0 +1,31 @@
+{
+  "name": "anchor-backpressure",
+  "duration": 14.0,
+  "queue_capacity": 64,
+  "target_commit_latency": 1.0,
+  "telemetry_window_size": 1,
+  "max_pending_anchors": 1,
+  "segments": [
+    {
+      "duration": 4.0,
+      "rate": 8.0,
+      "anchor_ack_latency": 1.0,
+      "cpu_load": 0.25,
+      "input_queue_fill": 0.2
+    },
+    {
+      "duration": 6.0,
+      "rate": 8.0,
+      "anchor_ack_latency": 5.0,
+      "cpu_load": 0.30,
+      "input_queue_fill": 0.25
+    },
+    {
+      "duration": 4.0,
+      "rate": 8.0,
+      "anchor_ack_latency": 1.2,
+      "cpu_load": 0.28,
+      "input_queue_fill": 0.2
+    }
+  ]
+}

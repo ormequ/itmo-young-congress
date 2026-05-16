@@ -10,6 +10,7 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-run-scenario --config configs
 PYTHONPATH=src python3 -m itmo_young_congress demo-run-batch --config configs/burst.json --seeds 1,2,3 --output-dir artifacts/burst-batch
 PYTHONPATH=src python3 -m itmo_young_congress demo-build-report --summary artifacts/burst-batch/batch_summary.json --output-dir artifacts/burst-report
 PYTHONPATH=src python3 -m itmo_young_congress demo-stress-test --config configs/burst.json --arrival-rates 2,4,6,8,10,12 --seeds 1,2,3 --commit-latency-limit 5.0 --input-queue-fill-limit 0.9 --output-dir artifacts/stress/burst
+PYTHONPATH=src python3 -m itmo_young_congress demo-stress-capacity --config configs/combined-stress.json --policies adaptive,fixed-small,fixed-nominal,fixed-large --arrival-rates 4,6,8,10,12,14 --seeds 1,2,3 --output artifacts/stress_capacity.json
 PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/critical-event-injection.json --seed 2 --output artifacts/demo.json
 ```
 
@@ -314,3 +315,99 @@ commit_latency = commit_time - event.arrival_time
 - `configs/queue-saturation.json`
 - `configs/combined-stress.json`
 - `configs/critical-event-injection.json`
+- `configs/memory-pressure.json`
+- `configs/anchor-backpressure.json`
+
+`memory-pressure` изолирует рост `epoch_payload_bytes / memory_pressure`: задержка внешней фиксации и очередь остаются умеренными, а размер payload в сегментах увеличивается.
+`anchor-backpressure` изолирует рост `pending_anchor_count`: payload не раздувается, но `anchor_ack_latency` временно становится большим, из-за чего внешняя фиксация не успевает подтверждать закрытые эпохи.
+
+## Графики для статьи
+
+Все PNG-графики из этого раздела строятся с англоязычными подписями и рассчитаны на вставку в англоязычную статью в IEEE-style оформлении.
+
+`scripts/plot_results.py batch` строит обзорные рисунки по `batch_summary.json`:
+
+- `commit_latency_overview.png` - показывает, что adaptive policy управляет `commit_latency` как freshness/security-метрикой;
+- `cost_and_stability_overview.png` - показывает цену фиксации через `commit_frequency`, `p95_queue_depth` и `queue_over_capacity_count`;
+- `cost_and_stability_full.png` - расширенная версия с дополнительными cost-метриками;
+- `memory_pressure_overview.png` - показывает, что `memory_pressure` ограничивает payload открытой эпохи; payload выводится в KiB;
+- `anchor_backpressure_ablation.png` - сравнивает `Adaptive full`, `Adaptive w/o anchor BP`, `Fixed-small` и `Fixed-nominal`; здесь `BP` означает `backpressure`.
+- `anchor_backpressure_overview.png` и `anchor_backpressure_full.png` сохраняются как вспомогательные агрегированные графики, но для статьи лучше использовать timeline-график реакции ниже.
+- старые `avg_commit_latency.png`, `max_commit_latency.png`, `commit_frequency.png`, `p95_queue_depth.png`, `avg_proof_bytes.png`, `tradeoff.png` также сохраняются.
+
+`scripts/plot_results.py timeline` строит:
+
+- `target_timeline.png`;
+- `telemetry_timeline.png`;
+- `adaptation_timeline.png` с `arrival_rate`, `anchor_ack_latency`, `next_target`, `input_queue_fill`, `memory_pressure`, `pending_anchor_count` и маркерами `should_close`.
+- `backpressure_response_timeline.png` - основной график для anchor backpressure: показывает, как рост `anchor_ack_latency` и `pending_anchor_count` приводит к увеличению adaptive target epoch size и снижению частоты новых root commits.
+
+Для `combined-stress` возможно, что adaptive policy показывает больший `pending_anchor_count`, чем фиксированные политики.
+Это ожидаемое поведение, если hard-close и cap-ограничения сохраняют свежесть фиксации при ресурсном давлении: политика закрывает эпохи ради freshness/security, но тем самым временно усиливает anchor backpressure.
+В статье это можно формулировать так:
+
+```text
+Under combined stress, adaptive policy may produce more pending anchors because hard-close and cap constraints preserve freshness under resource pressure. This illustrates the trade-off between integrity freshness and anchor backpressure.
+
+Adaptive full reduces pending anchors and commit frequency compared with Adaptive w/o anchor BP, at the cost of moderately higher commit latency.
+```
+
+`scripts/plot_results.py stress` принимает результат `demo-stress-capacity` и строит:
+
+- `stress_capacity.png`;
+- `stress_summary_table.png`.
+
+Safe throughput считается безопасным, если одновременно выполняются условия:
+
+- `p95_commit_latency <= commit-latency-limit`;
+- `p95_queue_depth <= queue_capacity * input-queue-fill-limit`;
+- `queue_over_capacity_count == 0`;
+- `max_pending_anchor_count <= max_pending_anchors`, если в сценарии задан конечный лимит.
+
+Пример полного запуска для статьи:
+
+```bash
+mkdir -p artifacts/article/plots
+
+PYTHONPATH=src python3 -m itmo_young_congress demo-run-batch \
+  --config configs/steady.json,configs/burst.json,configs/storage-degradation.json,configs/cpu-pressure.json,configs/queue-saturation.json,configs/combined-stress.json,configs/critical-event-injection.json,configs/memory-pressure.json,configs/anchor-backpressure.json \
+  --seeds 1,2,3 \
+  --output-dir artifacts/article/batch
+
+python3 scripts/plot_results.py batch \
+  --summary artifacts/article/batch/batch_summary.json \
+  --output-dir artifacts/article/plots
+
+PYTHONPATH=src python3 -m itmo_young_congress demo-stress-capacity \
+  --config configs/combined-stress.json \
+  --policies adaptive,fixed-small,fixed-nominal,fixed-large \
+  --arrival-rates 4,6,8,10,12,14,16 \
+  --seeds 1,2,3 \
+  --commit-latency-limit 5.0 \
+  --input-queue-fill-limit 0.9 \
+  --output artifacts/article/stress_capacity.json
+
+python3 scripts/plot_results.py stress \
+  --summary artifacts/article/stress_capacity.json \
+  --output-dir artifacts/article/plots
+
+PYTHONPATH=src python3 -m itmo_young_congress demo-stress-response \
+  --config configs/combined-stress.json \
+  --policies adaptive,fixed-nominal,fixed-small \
+  --seed 1 \
+  --output artifacts/article/combined_trace.json
+
+python3 scripts/plot_results.py timeline \
+  --summary artifacts/article/combined_trace.json \
+  --output-dir artifacts/article/plots
+
+PYTHONPATH=src python3 -m itmo_young_congress demo-stress-response \
+  --config configs/anchor-backpressure.json \
+  --policies adaptive,fixed-nominal \
+  --seed 1 \
+  --output artifacts/article/backpressure_trace.json
+
+python3 scripts/plot_results.py timeline \
+  --summary artifacts/article/backpressure_trace.json \
+  --output-dir artifacts/article/plots
+```

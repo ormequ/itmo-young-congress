@@ -64,6 +64,45 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertTrue((tmp / "report" / "summary.md").exists())
 
+    def test_run_batch_accepts_multiple_configs(self) -> None:
+        first_scenario = {
+            "name": "one",
+            "duration": 2.0,
+            "queue_capacity": 10,
+            "target_commit_latency": 1.0,
+            "segments": [{"duration": 2.0, "rate": 2.0}],
+        }
+        second_scenario = {
+            "name": "two",
+            "duration": 2.0,
+            "queue_capacity": 10,
+            "target_commit_latency": 1.0,
+            "segments": [{"duration": 2.0, "rate": 3.0}],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            first_path = tmp / "one.json"
+            second_path = tmp / "two.json"
+            first_path.write_text(json.dumps(first_scenario), encoding="utf-8")
+            second_path.write_text(json.dumps(second_scenario), encoding="utf-8")
+
+            exit_code = main(
+                [
+                    "demo-run-batch",
+                    "--config",
+                    f"{first_path},{second_path}",
+                    "--seeds",
+                    "1",
+                    "--output-dir",
+                    str(tmp / "batch"),
+                ]
+            )
+
+            rows = json.loads((tmp / "batch" / "batch_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(exit_code, 0)
+            self.assertEqual({row["scenario"] for row in rows}, {"one", "two"})
+
     def test_verify_proof_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

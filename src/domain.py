@@ -57,6 +57,7 @@ class ArrivalSegment:
     input_queue_fill: float = field(default_factory=lambda: load_settings().segment_input_queue_fill)
     critical_every: int = 0
     source_priority: float = field(default_factory=lambda: load_settings().segment_source_priority)
+    payload_size_bytes: int = 0
 
 
 @dataclass(frozen=True)

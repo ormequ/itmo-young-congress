@@ -12,15 +12,16 @@ from simulator import generate_events, run_simulation, run_simulation_trace
 
 def run_batch(
     scenarios: Sequence[ScenarioConfig],
-    policies: Dict[str, object],
+    policies: Dict[str, object] | None,
     seeds: Sequence[int],
     output_dir: Path,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     rows: List[dict] = []
     for scenario in scenarios:
+        scenario_policies = policies if policies is not None else make_policies(scenario)
         for seed in seeds:
-            for policy_name, policy in policies.items():
+            for policy_name, policy in scenario_policies.items():
                 result = run_simulation(scenario, policy, seed=seed)
                 rows.append(
                     {
@@ -30,6 +31,7 @@ def run_batch(
                         "avg_commit_latency": result.metrics.avg_commit_latency,
                         "p95_commit_latency": result.metrics.p95_commit_latency,
                         "max_commit_latency": result.metrics.max_commit_latency,
+                        "target_commit_latency": scenario.target_commit_latency,
                         "commit_frequency": result.metrics.commit_frequency,
                         "max_queue_depth": result.metrics.max_queue_depth,
                         "p95_queue_depth": result.metrics.p95_queue_depth,
@@ -141,6 +143,7 @@ def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig
             input_queue_fill=segment.input_queue_fill,
             critical_every=segment.critical_every,
             source_priority=segment.source_priority,
+            payload_size_bytes=segment.payload_size_bytes,
         )
         for segment in scenario.segments
     )
@@ -181,6 +184,7 @@ def _phase_payload(scenario: ScenarioConfig) -> List[dict]:
                 "anchor_ack_latency": segment.anchor_ack_latency,
                 "input_queue_fill": segment.input_queue_fill,
                 "source_priority": segment.source_priority,
+                "payload_size_bytes": segment.payload_size_bytes,
             }
         )
         current_time = end
@@ -227,9 +231,13 @@ def run_stress_test(
         safe_rate = 0.0
         safe_metrics = {
             "avg_commit_latency": 0.0,
+            "p95_commit_latency": 0.0,
             "max_commit_latency": 0.0,
             "commit_frequency_at_safe_throughput": 0.0,
             "max_queue_depth_at_safe_throughput": 0.0,
+            "p95_queue_depth_at_safe_throughput": 0.0,
+            "queue_over_capacity_count_at_safe_throughput": 0,
+            "max_pending_anchor_count_at_safe_throughput": 0,
             "avg_proof_bytes_at_safe_throughput": 0.0,
             "signature_time_per_second_at_safe_throughput": 0.0,
             "passes_constraints": False,
@@ -239,25 +247,39 @@ def run_stress_test(
             stress_scenario = _scenario_with_rate(scenario, rate)
             results = [run_simulation(stress_scenario, policy, seed=seed) for seed in seeds]
             avg_commit_latency = sum(result.metrics.avg_commit_latency for result in results) / len(results)
+            p95_commit_latency = sum(result.metrics.p95_commit_latency for result in results) / len(results)
             max_commit_latency = max(result.metrics.max_commit_latency for result in results)
             commit_frequency = sum(result.metrics.commit_frequency for result in results) / len(results)
             max_queue_depth = max(result.metrics.max_queue_depth for result in results)
+            p95_queue_depth = sum(result.metrics.p95_queue_depth for result in results) / len(results)
+            queue_over_capacity_count = sum(result.metrics.queue_over_capacity_count for result in results)
+            max_pending_anchor_count = max(result.metrics.max_pending_anchor_count for result in results)
             avg_proof_bytes = sum(result.metrics.avg_proof_bytes for result in results) / len(results)
             signature_time_per_second = (
                 sum(result.metrics.signature_time_per_second for result in results) / len(results)
             )
+            pending_anchor_limit = scenario.max_pending_anchors
+            pending_anchor_safe = (
+                pending_anchor_limit == float("inf") or max_pending_anchor_count <= pending_anchor_limit
+            )
             is_safe = (
-                max_commit_latency <= commit_latency_limit
-                and max_queue_depth <= queue_limit
+                p95_commit_latency <= commit_latency_limit
+                and p95_queue_depth <= queue_limit
+                and queue_over_capacity_count == 0
+                and pending_anchor_safe
                 and commit_frequency <= commit_frequency_limit
             )
             if is_safe:
                 safe_rate = rate
                 safe_metrics = {
                     "avg_commit_latency": avg_commit_latency,
+                    "p95_commit_latency": p95_commit_latency,
                     "max_commit_latency": max_commit_latency,
                     "commit_frequency_at_safe_throughput": commit_frequency,
                     "max_queue_depth_at_safe_throughput": max_queue_depth,
+                    "p95_queue_depth_at_safe_throughput": p95_queue_depth,
+                    "queue_over_capacity_count_at_safe_throughput": queue_over_capacity_count,
+                    "max_pending_anchor_count_at_safe_throughput": max_pending_anchor_count,
                     "avg_proof_bytes_at_safe_throughput": avg_proof_bytes,
                     "signature_time_per_second_at_safe_throughput": signature_time_per_second,
                     "passes_constraints": True,
@@ -301,35 +323,70 @@ def run_stress_capacity(
     arrival_rates: Sequence[float],
     seeds: Sequence[int],
     policies: Sequence[str],
+    commit_latency_limit: float = 5.0,
+    input_queue_fill_limit: float = 0.9,
 ) -> Dict[str, object]:
     available = _stress_policies(scenario)
     curves: Dict[str, List[dict]] = {}
+    policy_summaries: Dict[str, dict] = {}
+    queue_limit = scenario.queue_capacity * input_queue_fill_limit
 
     for policy_name in policies:
         policy = available[policy_name]
         points: List[dict] = []
+        safe_throughput = 0.0
+        safe_point: dict | None = None
         for rate in arrival_rates:
             stress_scenario = _scenario_with_rate(scenario, rate)
             results = [run_simulation(stress_scenario, policy, seed=seed) for seed in seeds]
-            points.append(
-                {
-                    "arrival_rate": rate,
-                    "avg_commit_latency": sum(result.metrics.avg_commit_latency for result in results)
-                    / len(results),
-                    "max_commit_latency": max(result.metrics.max_commit_latency for result in results),
-                    "commit_frequency": sum(result.metrics.commit_frequency for result in results) / len(results),
-                    "max_queue_depth": max(result.metrics.max_queue_depth for result in results),
-                    "avg_proof_bytes": sum(result.metrics.avg_proof_bytes for result in results) / len(results),
-                    "signature_time_per_second": sum(
-                        result.metrics.signature_time_per_second for result in results
-                    )
-                    / len(results),
-                }
+            avg_commit_latency = sum(result.metrics.avg_commit_latency for result in results) / len(results)
+            p95_commit_latency = sum(result.metrics.p95_commit_latency for result in results) / len(results)
+            max_commit_latency = max(result.metrics.max_commit_latency for result in results)
+            commit_frequency = sum(result.metrics.commit_frequency for result in results) / len(results)
+            max_queue_depth = max(result.metrics.max_queue_depth for result in results)
+            p95_queue_depth = sum(result.metrics.p95_queue_depth for result in results) / len(results)
+            queue_over_capacity_count = sum(result.metrics.queue_over_capacity_count for result in results)
+            max_pending_anchor_count = max(result.metrics.max_pending_anchor_count for result in results)
+            pending_anchor_limit = scenario.max_pending_anchors
+            pending_anchor_safe = (
+                pending_anchor_limit == float("inf") or max_pending_anchor_count <= pending_anchor_limit
             )
+            is_safe = (
+                p95_commit_latency <= commit_latency_limit
+                and p95_queue_depth <= queue_limit
+                and queue_over_capacity_count == 0
+                and pending_anchor_safe
+            )
+            point = {
+                "arrival_rate": rate,
+                "avg_commit_latency": avg_commit_latency,
+                "p95_commit_latency": p95_commit_latency,
+                "max_commit_latency": max_commit_latency,
+                "commit_frequency": commit_frequency,
+                "max_queue_depth": max_queue_depth,
+                "p95_queue_depth": p95_queue_depth,
+                "queue_over_capacity_count": queue_over_capacity_count,
+                "max_pending_anchor_count": max_pending_anchor_count,
+                "avg_proof_bytes": sum(result.metrics.avg_proof_bytes for result in results) / len(results),
+                "signature_time_per_second": sum(
+                    result.metrics.signature_time_per_second for result in results
+                )
+                / len(results),
+                "is_safe": is_safe,
+            }
+            points.append(point)
+            if is_safe:
+                safe_throughput = rate
+                safe_point = point
         curves[policy_name] = points
+        policy_summaries[policy_name] = {
+            "safe_throughput": safe_throughput,
+            "safe_point": safe_point,
+        }
 
     return {
         "scenario": scenario.name,
         "arrival_rates": list(arrival_rates),
         "curves": curves,
+        "policies": policy_summaries,
     }

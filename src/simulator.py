@@ -36,6 +36,8 @@ def generate_events(scenario: ScenarioConfig, seed: int) -> List[Event]:
                 break
             critical = segment.critical_every > 0 and event_id % segment.critical_every == 0
             payload = f"{scenario.name}:{event_id}:{current_time:.6f}".encode("utf-8")
+            if segment.payload_size_bytes > len(payload):
+                payload += b"." * (segment.payload_size_bytes - len(payload))
             events.append(
                 Event(
                     event_id=event_id,
@@ -52,7 +54,7 @@ def generate_events(scenario: ScenarioConfig, seed: int) -> List[Event]:
                         if critical
                         else settings.simulator_generated_criticality_default
                     ),
-                    payload_size_bytes=len(payload),
+                    payload_size_bytes=segment.payload_size_bytes or len(payload),
                     source_priority=segment.source_priority,
                 )
             )

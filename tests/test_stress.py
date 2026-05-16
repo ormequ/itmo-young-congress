@@ -63,6 +63,10 @@ class StressTests(unittest.TestCase):
         self.assertIn("fixed-large", summary)
         self.assertIn("safe_throughput", summary["adaptive"])
         self.assertIn("commit_frequency_at_safe_throughput", summary["fixed-small"])
+        self.assertIn("p95_commit_latency", summary["adaptive"])
+        self.assertIn("p95_queue_depth_at_safe_throughput", summary["adaptive"])
+        self.assertIn("queue_over_capacity_count_at_safe_throughput", summary["adaptive"])
+        self.assertIn("max_pending_anchor_count_at_safe_throughput", summary["adaptive"])
         self.assertIn("passes_constraints", summary["fixed-large"])
         self.assertIn("signature_time_per_second_at_safe_throughput", summary["adaptive"])
 
@@ -123,6 +127,50 @@ class StressTests(unittest.TestCase):
         self.assertIn("adaptive", payload["curves"])
         self.assertEqual(len(payload["curves"]["adaptive"]), 3)
         self.assertIn("max_commit_latency", payload["curves"]["adaptive"][0])
+        self.assertIn("p95_commit_latency", payload["curves"]["adaptive"][0])
+        self.assertIn("p95_queue_depth", payload["curves"]["adaptive"][0])
+        self.assertIn("queue_over_capacity_count", payload["curves"]["adaptive"][0])
+        self.assertIn("max_pending_anchor_count", payload["curves"]["adaptive"][0])
+        self.assertIn("is_safe", payload["curves"]["adaptive"][0])
+        self.assertIn("safe_throughput", payload["policies"]["adaptive"])
+
+    def test_stress_capacity_marks_pending_anchor_over_limit_as_unsafe(self) -> None:
+        scenario = ScenarioConfig(
+            name="anchor-capacity",
+            duration=8.0,
+            queue_capacity=32,
+            target_commit_latency=1.0,
+            telemetry_window_size=1,
+            max_pending_anchors=0,
+            segments=(ArrivalSegment(duration=8.0, rate=8.0, anchor_ack_latency=5.0),),
+        )
+
+        payload = run_stress_capacity(
+            scenario=scenario,
+            arrival_rates=[8.0],
+            seeds=[1],
+            policies=["fixed-small"],
+            commit_latency_limit=100.0,
+            input_queue_fill_limit=1.0,
+        )
+
+        point = payload["curves"]["fixed-small"][0]
+        self.assertGreater(point["max_pending_anchor_count"], 0)
+        self.assertFalse(point["is_safe"])
+        self.assertEqual(payload["policies"]["fixed-small"]["safe_throughput"], 0.0)
+
+    def test_article_scenario_configs_isolate_memory_and_anchor_pressure(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        memory = load_scenario(root / "configs" / "memory-pressure.json")
+        anchor = load_scenario(root / "configs" / "anchor-backpressure.json")
+
+        self.assertLess(memory.epoch_buffer_budget_bytes, float("inf"))
+        self.assertTrue(all(segment.anchor_ack_latency <= 1.2 for segment in memory.segments))
+        self.assertTrue(all(segment.input_queue_fill <= 0.4 for segment in memory.segments))
+        self.assertTrue(any(segment.payload_size_bytes >= 256 for segment in memory.segments))
+        self.assertEqual(anchor.epoch_buffer_budget_bytes, float("inf"))
+        self.assertEqual(anchor.max_pending_anchors, 1)
+        self.assertTrue(any(segment.anchor_ack_latency >= 4.0 for segment in anchor.segments))
 
     def test_cli_stress_test_command_writes_summary(self) -> None:
         payload = {

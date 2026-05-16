@@ -29,9 +29,9 @@ def _cmd_run_scenario(args: argparse.Namespace) -> int:
 
 
 def _cmd_run_batch(args: argparse.Namespace) -> int:
-    scenario = load_scenario(Path(args.config))
+    scenarios = [load_scenario(Path(item)) for item in args.config.split(",") if item]
     seeds = [int(item) for item in args.seeds.split(",") if item]
-    run_batch([scenario], make_policies(scenario), seeds=seeds, output_dir=Path(args.output_dir))
+    run_batch(scenarios, None, seeds=seeds, output_dir=Path(args.output_dir))
     return 0
 
 
@@ -81,6 +81,8 @@ def _cmd_stress_capacity(args: argparse.Namespace) -> int:
         arrival_rates=arrival_rates,
         seeds=seeds,
         policies=policies,
+        commit_latency_limit=args.commit_latency_limit or DEFAULT_DEMO_STRESS_COMMIT_LATENCY_LIMIT,
+        input_queue_fill_limit=args.input_queue_fill_limit or DEFAULT_DEMO_STRESS_INPUT_QUEUE_FILL_LIMIT,
     )
     write_json(Path(args.output), payload)
     return 0
@@ -103,6 +105,7 @@ def register_demo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
             "adaptive-no-anchor-ack-latency",
             "adaptive-no-cpu-load",
             "adaptive-no-input-queue-fill",
+            "adaptive-no-pending-anchors",
             "adaptive-no-early-close",
         ],
     )
@@ -165,6 +168,10 @@ def register_demo_commands(subparsers: argparse._SubParsersAction[argparse.Argum
     capacity_parser.add_argument("--arrival-rates", required=True)
     # Comma-separated seeds for repeated runs at each load level.
     capacity_parser.add_argument("--seeds", required=True)
+    # Optional SLA limit for p95 commit latency during safe-throughput marking.
+    capacity_parser.add_argument("--commit-latency-limit", type=float)
+    # Optional SLA limit for p95 input queue occupancy, expressed as a capacity fraction.
+    capacity_parser.add_argument("--input-queue-fill-limit", type=float)
     # Output JSON file containing aggregated curve points.
     capacity_parser.add_argument("--output", required=True)
     capacity_parser.set_defaults(handler=_cmd_stress_capacity)
