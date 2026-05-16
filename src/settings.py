@@ -23,6 +23,8 @@ class Settings:
     telemetry_window_size: int
     anomaly_score_threshold: float
     criticality_threshold: float
+    source_priority_min: float
+    source_priority_max: float
     # Optional lower/upper bounds for epoch size in number of events.
     min_epoch_events: int
     max_epoch_events: float
@@ -67,6 +69,8 @@ def load_settings() -> Settings:
         telemetry_window_size=_env_int("TELEMETRY_WINDOW_SIZE", 5),
         anomaly_score_threshold=_env_float("ANOMALY_SCORE_THRESHOLD", 3.0),
         criticality_threshold=_env_float("CRITICALITY_THRESHOLD", 0.95),
+        source_priority_min=_env_float("SOURCE_PRIORITY_MIN", 0.5),
+        source_priority_max=_env_float("SOURCE_PRIORITY_MAX", 2.0),
         # Optional epoch constraints; default values keep them effectively disabled.
         min_epoch_events=_env_int("MIN_EPOCH_EVENTS", 0),
         max_epoch_events=_env_float("MAX_EPOCH_EVENTS", float("inf")),

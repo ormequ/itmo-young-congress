@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 
-from domain import EpochState, PolicyDecision, TelemetrySample
+from domain import EpochState, PolicyDecision, TelemetrySample, clamp_source_priority
 from settings import load_settings
 
 
@@ -73,10 +73,6 @@ class AdaptiveEpochPolicy:
                 (telemetry.cpu_load - settings.policy_cpu_load_trigger) / settings.policy_cpu_load_scale,
                 settings.policy_cpu_load_cap,
             )
-        if self.use_input_queue_fill and telemetry.input_queue_fill > settings.policy_input_queue_fill_trigger:
-            scaled_target *= max(settings.policy_input_queue_fill_min_scale, 1.0 - telemetry.input_queue_fill)
-        if self.use_memory_pressure and telemetry.memory_pressure > settings.policy_memory_pressure_trigger:
-            scaled_target *= max(settings.policy_memory_pressure_min_scale, 1.0 - telemetry.memory_pressure)
         if (
             self.use_pending_anchors
             and math.isfinite(self.max_pending_anchors)
@@ -88,17 +84,24 @@ class AdaptiveEpochPolicy:
                 * settings.policy_pending_anchor_scale,
                 settings.policy_pending_anchor_cap,
             )
+        if self.use_input_queue_fill and telemetry.input_queue_fill > settings.policy_input_queue_fill_trigger:
+            input_queue_cap = base_target * max(settings.policy_input_queue_fill_min_scale, 1.0 - telemetry.input_queue_fill)
+            scaled_target = min(scaled_target, input_queue_cap)
+        if self.use_memory_pressure and telemetry.memory_pressure > settings.policy_memory_pressure_trigger:
+            memory_cap = base_target * max(settings.policy_memory_pressure_min_scale, 1.0 - telemetry.memory_pressure)
+            scaled_target = min(scaled_target, memory_cap)
 
         lower, upper = self._bounds_for_rate(base_rate)
         candidate = max(round(scaled_target), lower) if math.isinf(upper) else _clamp(round(scaled_target), lower, upper)
         delta_ratio = abs(candidate - state.current_target) / max(1, state.current_target)
         next_target = candidate if delta_ratio > self.change_threshold else state.current_target
+        source_priority = clamp_source_priority(telemetry.source_priority)
         effective_criticality = (
             telemetry.effective_criticality_level
             if telemetry.effective_criticality_level > 0.0
-            else min(1.0, telemetry.criticality_level * telemetry.source_priority)
+            else min(1.0, telemetry.criticality_level * source_priority)
         )
-        priority_adjusted_anomaly_score = telemetry.anomaly_score * telemetry.source_priority
+        priority_adjusted_anomaly_score = telemetry.anomaly_score * source_priority
 
         should_close = (
             (self.use_early_close and telemetry.critical_event)

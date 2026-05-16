@@ -256,6 +256,65 @@ class SimulatorTests(unittest.TestCase):
         self.assertTrue(trace[1]["should_close"])
         self.assertEqual(result.commits[0].event_ids, (1, 2))
 
+    def test_source_priority_is_clamped_in_trace_and_closure_logic(self) -> None:
+        scenario = ScenarioConfig(
+            name="priority-clamp",
+            duration=2.0,
+            queue_capacity=20,
+            target_commit_latency=10.0,
+            anomaly_score_threshold=3.0,
+            segments=(ArrivalSegment(duration=2.0, rate=5.0, anchor_ack_latency=1.0),),
+        )
+        events = [
+            Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 5.0, 10.0, 0.1, source_priority=10.0),
+            Event(2, 0.1, b"b", 1.0, 0.2, 0.1, False, 5.0, 1.0, 0.1, source_priority=1.0),
+        ]
+        adaptive = AdaptiveEpochPolicy(
+            target_commit_latency=10.0,
+            min_epoch_events=1,
+            max_epoch_events=100,
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
+            change_threshold=0.1,
+            anchor_ack_target=1.0,
+            anomaly_score_threshold=3.0,
+        )
+
+        trace = run_simulation_trace(scenario, adaptive, events=events)
+
+        self.assertEqual(trace[0]["source_priority"], 2.0)
+        self.assertFalse(trace[0]["should_close"])
+
+    def test_max_epoch_duration_closes_epoch_by_elapsed_time(self) -> None:
+        scenario = ScenarioConfig(
+            name="duration-limit",
+            duration=3.0,
+            queue_capacity=20,
+            target_commit_latency=10.0,
+            segments=(ArrivalSegment(duration=3.0, rate=10.0, anchor_ack_latency=1.0),),
+        )
+        events = [
+            Event(1, 0.0, b"a", 1.0, 0.2, 0.1, False, 10.0),
+            Event(2, 0.4, b"b", 1.0, 0.2, 0.1, False, 10.0),
+            Event(3, 1.1, b"c", 1.0, 0.2, 0.1, False, 10.0),
+            Event(4, 1.2, b"d", 1.0, 0.2, 0.1, False, 10.0),
+        ]
+        adaptive = AdaptiveEpochPolicy(
+            target_commit_latency=10.0,
+            min_epoch_events=1,
+            max_epoch_events=100,
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=1.0,
+            change_threshold=0.1,
+            anchor_ack_target=1.0,
+        )
+
+        trace = run_simulation_trace(scenario, adaptive, events=events)
+        result = run_simulation(scenario, adaptive, events=events)
+
+        self.assertTrue(trace[2]["max_epoch_duration_reached"])
+        self.assertEqual(result.commits[0].event_ids, (1, 2, 3))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ from domain import (
     ScenarioConfig,
     SimulationResult,
     TelemetrySample,
+    clamp_source_priority,
 )
 from settings import load_settings
 
@@ -153,11 +154,12 @@ def _run_simulation_internal(
     input_queue_history: List[float] = []
     data_history: List[float] = []
     trace: List[dict] = []
+    epoch_started_at: Optional[float] = None
 
     current_target = getattr(policy, "fixed_target", max(1, round(scenario.target_commit_latency)))
 
     def close_epoch(commit_reference_time: float) -> None:
-        nonlocal epoch_events
+        nonlocal epoch_events, epoch_started_at
         if not epoch_events:
             return
 
@@ -184,6 +186,7 @@ def _run_simulation_internal(
         )
         pending_anchor_commit_times.append(commit_time)
         epoch_events = []
+        epoch_started_at = None
 
     for event in event_stream:
         pending_anchor_commit_times = [
@@ -191,6 +194,8 @@ def _run_simulation_internal(
         ]
         pending_anchor_count = len(pending_anchor_commit_times)
         pending_anchor_records.append(pending_anchor_count)
+        if not epoch_events:
+            epoch_started_at = event.arrival_time
         epoch_events.append(event)
         queue_depths.append(len(epoch_events))
         epoch_payload_bytes = sum(item.payload_size_bytes or len(item.payload) for item in epoch_events)
@@ -208,7 +213,14 @@ def _run_simulation_internal(
         rolling_cpu_mean, rolling_cpu_std = _mean_std(cpu_window)
         rolling_input_queue_mean, rolling_input_queue_std = _mean_std(input_queue_window)
         rolling_data_mean, rolling_data_std = _mean_std(data_window)
-        effective_criticality_level = min(1.0, event.criticality_level * event.source_priority)
+        source_priority = clamp_source_priority(event.source_priority)
+        effective_criticality_level = min(1.0, event.criticality_level * source_priority)
+        max_epoch_duration = getattr(policy, "max_epoch_duration_seconds", float("inf"))
+        max_epoch_duration_reached = (
+            epoch_started_at is not None
+            and max_epoch_duration < float("inf")
+            and event.arrival_time - epoch_started_at >= max_epoch_duration
+        )
 
         telemetry = TelemetrySample(
             arrival_rate=event.arrival_rate,
@@ -231,7 +243,7 @@ def _run_simulation_internal(
                 _anomaly_score(event.data_value, data_window),
             ),
             criticality_level=event.criticality_level,
-            source_priority=event.source_priority,
+            source_priority=source_priority,
             effective_criticality_level=effective_criticality_level,
             epoch_payload_bytes=epoch_payload_bytes,
             memory_pressure=memory_pressure,
@@ -260,13 +272,14 @@ def _run_simulation_internal(
                     "current_target": current_target,
                     "next_target": decision.next_target,
                     "anomaly_score": telemetry.anomaly_score,
-                    "source_priority": event.source_priority,
+                    "source_priority": source_priority,
                     "effective_criticality_level": effective_criticality_level,
-                    "should_close": decision.should_close,
+                    "max_epoch_duration_reached": max_epoch_duration_reached,
+                    "should_close": decision.should_close or max_epoch_duration_reached,
                 }
             )
         current_target = decision.next_target
-        if decision.should_close:
+        if decision.should_close or max_epoch_duration_reached:
             close_epoch(event.arrival_time)
 
         anchor_ack_history.append(event.anchor_ack_latency)

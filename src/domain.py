@@ -6,6 +6,11 @@ from typing import Tuple
 from settings import load_settings
 
 
+def clamp_source_priority(value: float) -> float:
+    settings = load_settings()
+    return max(settings.source_priority_min, min(value, settings.source_priority_max))
+
+
 @dataclass(frozen=True)
 class TelemetrySample:
     arrival_rate: float

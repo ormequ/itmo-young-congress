@@ -89,7 +89,8 @@ if cpu_load > policy_cpu_load_trigger:
 
 ```text
 if input_queue_fill > policy_input_queue_fill_trigger:
-  scaled_target *= max(policy_input_queue_fill_min_scale, 1 - input_queue_fill)
+  input_queue_cap = base_target * max(policy_input_queue_fill_min_scale, 1 - input_queue_fill)
+  scaled_target = min(scaled_target, input_queue_cap)
 ```
 
 Если объем накопленных payload приближается к бюджету памяти открытой эпохи, target тоже уменьшается:
@@ -98,7 +99,8 @@ if input_queue_fill > policy_input_queue_fill_trigger:
 memory_pressure = epoch_payload_bytes / epoch_buffer_budget_bytes
 
 if memory_pressure > policy_memory_pressure_trigger:
-  scaled_target *= max(policy_memory_pressure_min_scale, 1 - memory_pressure)
+  memory_cap = base_target * max(policy_memory_pressure_min_scale, 1 - memory_pressure)
+  scaled_target = min(scaled_target, memory_cap)
 ```
 
 Если внешняя система фиксации не успевает подтверждать закрытые эпохи, target увеличивается:
@@ -112,6 +114,7 @@ if pending_anchor_count > max_pending_anchors:
 ```
 
 Так в модели появляется конфликт управления: рост `input_queue_fill` заставляет закрывать эпохи чаще, а рост `pending_anchor_count` показывает backpressure внешней фиксации и заставляет закрывать их реже.
+При этом `input_queue_fill` и `memory_pressure` применяются как верхние ограничения на target, поэтому anchor-backpressure не может отменить сжатие эпохи при заполнении входной очереди или буфера памяти.
 
 После этого новый target ограничивается диапазоном:
 
@@ -138,6 +141,8 @@ next_target = candidate if delta_ratio > policy_change_threshold else current_ta
 Адаптивная политика может закрыть эпоху раньше заполнения, если выполняется хотя бы одно условие:
 
 - пришло критичное событие;
+- достигнуто `max_epoch_duration_seconds`;
+- достигнуто `max_epoch_events`;
 - `anomaly_score * source_priority >= anomaly_score_threshold`;
 - `effective_criticality_level >= criticality_threshold`;
 - `input_queue_fill >= policy_input_queue_close_threshold`;
@@ -181,10 +186,17 @@ anomaly_score * source_priority >= anomaly_score_threshold
 Для промышленных сценариев у события может быть не только собственная критичность, но и приоритет источника:
 
 ```text
+source_priority = clamp(source_priority, 0.5, 2.0)
 effective_criticality_level = min(1.0, criticality_level * source_priority)
 ```
 
 Это позволяет отличать одинаковые значения телеметрии от разных потоков: событие от источника аварийной защиты может закрыть эпоху раньше, чем событие такой же формы от диагностического потока.
+Рекомендуемая шкала:
+
+- `0.5` - низкоприоритетный диагностический поток;
+- `1.0` - обычный источник;
+- `1.5` - важный технологический источник;
+- `2.0` - критичный источник.
 
 ## Метрики
 
@@ -223,6 +235,8 @@ commit_latency = commit_time - event.arrival_time
 | `TELEMETRY_WINDOW_SIZE` | `5` | размер окна для детектирования аномалий |
 | `ANOMALY_SCORE_THRESHOLD` | `3.0` | порог аномалии в единицах стандартного отклонения |
 | `CRITICALITY_THRESHOLD` | `0.95` | критичность, при которой адаптивная политика закрывает эпоху немедленно |
+| `SOURCE_PRIORITY_MIN` | `0.5` | минимальный вес источника |
+| `SOURCE_PRIORITY_MAX` | `2.0` | максимальный вес источника |
 | `MIN_EPOCH_EVENTS` | `0` | минимальное число событий в эпохе, если ограничение нужно |
 | `MAX_EPOCH_EVENTS` | `inf` | максимальное число событий в эпохе, если ограничение нужно |
 | `MIN_EPOCH_DURATION_SECONDS` | `0` | минимальная длительность открытой эпохи в секундах |

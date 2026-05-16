@@ -146,6 +146,27 @@ class AdaptivePolicyTests(unittest.TestCase):
         self.assertGreater(decision.next_target, state.current_target)
         self.assertFalse(decision.should_close)
 
+    def test_memory_pressure_caps_target_even_with_anchor_backpressure(self) -> None:
+        policy = AdaptiveEpochPolicy(
+            target_commit_latency=2.0,
+            min_epoch_events=2,
+            max_epoch_events=40,
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
+            change_threshold=0.1,
+            anchor_ack_target=1.0,
+            max_pending_anchors=1,
+        )
+        state = EpochState(epoch_event_count=1, current_target=16)
+
+        decision = policy.evaluate(
+            state,
+            TelemetrySample(arrival_rate=8.0, pending_anchor_count=10, memory_pressure=0.85),
+        )
+
+        self.assertLessEqual(decision.next_target, 4)
+        self.assertFalse(decision.should_close)
+
     def test_source_priority_amplifies_anomaly_and_criticality(self) -> None:
         policy = AdaptiveEpochPolicy(
             target_commit_latency=2.0,
@@ -171,6 +192,26 @@ class AdaptivePolicyTests(unittest.TestCase):
 
         self.assertFalse(low_priority.should_close)
         self.assertTrue(high_priority.should_close)
+
+    def test_source_priority_is_clamped_to_supported_range(self) -> None:
+        policy = AdaptiveEpochPolicy(
+            target_commit_latency=2.0,
+            min_epoch_events=2,
+            max_epoch_events=20,
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
+            change_threshold=0.1,
+            anchor_ack_target=1.0,
+            anomaly_score_threshold=3.0,
+        )
+        state = EpochState(epoch_event_count=1, current_target=10)
+
+        decision = policy.evaluate(
+            state,
+            TelemetrySample(arrival_rate=8.0, anomaly_score=1.4, source_priority=10.0),
+        )
+
+        self.assertFalse(decision.should_close)
 
     def test_closes_epoch_on_high_anomaly_score(self) -> None:
         policy = AdaptiveEpochPolicy(
