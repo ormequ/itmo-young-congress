@@ -20,7 +20,8 @@ class StressTests(unittest.TestCase):
             "anomaly_score_threshold": 2.2,
             "criticality_threshold": 0.8,
             "epoch_buffer_budget_bytes": 4096,
-            "segments": [{"duration": 5.0, "rate": 4.0, "anchor_ack_latency": 1.0}],
+            "max_pending_anchors": 3,
+            "segments": [{"duration": 5.0, "rate": 4.0, "anchor_ack_latency": 1.0, "source_priority": 1.5}],
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -32,6 +33,8 @@ class StressTests(unittest.TestCase):
         self.assertEqual(scenario.anomaly_score_threshold, 2.2)
         self.assertEqual(scenario.criticality_threshold, 0.8)
         self.assertEqual(scenario.epoch_buffer_budget_bytes, 4096)
+        self.assertEqual(scenario.max_pending_anchors, 3)
+        self.assertEqual(scenario.segments[0].source_priority, 1.5)
 
     def test_stress_test_reports_safe_throughput_per_policy(self) -> None:
         scenario = ScenarioConfig(

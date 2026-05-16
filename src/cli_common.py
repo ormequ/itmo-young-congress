@@ -22,6 +22,7 @@ def load_scenario(path: Path) -> ScenarioConfig:
         anomaly_score_threshold=payload.get("anomaly_score_threshold", settings.anomaly_score_threshold),
         criticality_threshold=payload.get("criticality_threshold", settings.criticality_threshold),
         epoch_buffer_budget_bytes=payload.get("epoch_buffer_budget_bytes", settings.epoch_buffer_budget_bytes),
+        max_pending_anchors=payload.get("max_pending_anchors", settings.max_pending_anchors),
     )
 
 
@@ -39,6 +40,7 @@ def make_policies(scenario: ScenarioConfig) -> dict:
         criticality_threshold=scenario.criticality_threshold,
         anomaly_score_threshold=scenario.anomaly_score_threshold,
         epoch_buffer_budget_bytes=scenario.epoch_buffer_budget_bytes,
+        max_pending_anchors=scenario.max_pending_anchors,
     )
     return {
         "fixed-small": FixedEpochPolicy(
@@ -55,6 +57,7 @@ def make_policies(scenario: ScenarioConfig) -> dict:
         "adaptive-no-anchor-ack-latency": AdaptiveEpochPolicy(**{**adaptive.__dict__, "use_anchor_ack_latency": False}),
         "adaptive-no-cpu-load": AdaptiveEpochPolicy(**{**adaptive.__dict__, "use_cpu_load": False}),
         "adaptive-no-input-queue-fill": AdaptiveEpochPolicy(**{**adaptive.__dict__, "use_input_queue_fill": False}),
+        "adaptive-no-pending-anchors": AdaptiveEpochPolicy(**{**adaptive.__dict__, "use_pending_anchors": False}),
         "adaptive-no-early-close": AdaptiveEpochPolicy(**{**adaptive.__dict__, "use_early_close": False}),
     }
 

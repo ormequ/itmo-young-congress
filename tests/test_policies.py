@@ -125,6 +125,53 @@ class AdaptivePolicyTests(unittest.TestCase):
         self.assertGreater(decision.next_target, state.current_target)
         self.assertFalse(decision.should_close)
 
+    def test_increases_target_when_pending_anchors_exceed_limit(self) -> None:
+        policy = AdaptiveEpochPolicy(
+            target_commit_latency=2.0,
+            min_epoch_events=2,
+            max_epoch_events=30,
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
+            change_threshold=0.1,
+            anchor_ack_target=1.0,
+            max_pending_anchors=2,
+        )
+        state = EpochState(epoch_event_count=1, current_target=16)
+
+        decision = policy.evaluate(
+            state,
+            TelemetrySample(arrival_rate=8.0, pending_anchor_count=4),
+        )
+
+        self.assertGreater(decision.next_target, state.current_target)
+        self.assertFalse(decision.should_close)
+
+    def test_source_priority_amplifies_anomaly_and_criticality(self) -> None:
+        policy = AdaptiveEpochPolicy(
+            target_commit_latency=2.0,
+            min_epoch_events=2,
+            max_epoch_events=20,
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
+            change_threshold=0.1,
+            anchor_ack_target=1.0,
+            anomaly_score_threshold=3.0,
+            criticality_threshold=0.9,
+        )
+        state = EpochState(epoch_event_count=1, current_target=10)
+
+        low_priority = policy.evaluate(
+            state,
+            TelemetrySample(arrival_rate=8.0, anomaly_score=2.0, criticality_level=0.5, source_priority=1.0),
+        )
+        high_priority = policy.evaluate(
+            state,
+            TelemetrySample(arrival_rate=8.0, anomaly_score=2.0, criticality_level=0.5, source_priority=2.0),
+        )
+
+        self.assertFalse(low_priority.should_close)
+        self.assertTrue(high_priority.should_close)
+
     def test_closes_epoch_on_high_anomaly_score(self) -> None:
         policy = AdaptiveEpochPolicy(
             target_commit_latency=2.0,

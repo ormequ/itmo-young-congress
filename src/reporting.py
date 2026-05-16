@@ -36,6 +36,8 @@ def run_batch(
                         "queue_over_capacity_count": result.metrics.queue_over_capacity_count,
                         "max_epoch_payload_bytes": result.metrics.max_epoch_payload_bytes,
                         "p95_epoch_payload_bytes": result.metrics.p95_epoch_payload_bytes,
+                        "max_pending_anchor_count": result.metrics.max_pending_anchor_count,
+                        "p95_pending_anchor_count": result.metrics.p95_pending_anchor_count,
                         "throughput": result.metrics.throughput,
                         "avg_proof_bytes": result.metrics.avg_proof_bytes,
                         "signature_time_per_second": result.metrics.signature_time_per_second,
@@ -68,6 +70,8 @@ def _aggregate(rows: Sequence[dict]) -> List[dict]:
                 "queue_over_capacity_count": sum(item["queue_over_capacity_count"] for item in group),
                 "max_epoch_payload_bytes": max(item["max_epoch_payload_bytes"] for item in group),
                 "p95_epoch_payload_bytes": sum(item["p95_epoch_payload_bytes"] for item in group) / count,
+                "max_pending_anchor_count": max(item["max_pending_anchor_count"] for item in group),
+                "p95_pending_anchor_count": sum(item["p95_pending_anchor_count"] for item in group) / count,
                 "throughput": sum(item["throughput"] for item in group) / count,
                 "avg_proof_bytes": sum(item["avg_proof_bytes"] for item in group) / count,
                 "signature_time_per_second": sum(item["signature_time_per_second"] for item in group) / count,
@@ -90,13 +94,13 @@ def build_report(summary_path: Path, report_dir: Path) -> Path:
 
     md_path = report_dir / "summary.md"
     md_lines = [
-        "| scenario | policy | avg_commit_latency | p95_commit_latency | max_commit_latency | commit_frequency | max_queue_depth | p95_queue_depth | queue_over_capacity_count | max_epoch_payload_bytes | p95_epoch_payload_bytes | throughput | avg_proof_bytes | signature_time_per_second |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| scenario | policy | avg_commit_latency | p95_commit_latency | max_commit_latency | commit_frequency | max_queue_depth | p95_queue_depth | queue_over_capacity_count | max_epoch_payload_bytes | p95_epoch_payload_bytes | max_pending_anchor_count | p95_pending_anchor_count | throughput | avg_proof_bytes | signature_time_per_second |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary:
         md_lines.append(
             "| {scenario} | {policy} | {avg_commit_latency:.3f} | {p95_commit_latency:.3f} | {max_commit_latency:.3f} | "
-            "{commit_frequency:.3f} | {max_queue_depth} | {p95_queue_depth:.3f} | {queue_over_capacity_count} | {max_epoch_payload_bytes} | {p95_epoch_payload_bytes:.1f} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
+            "{commit_frequency:.3f} | {max_queue_depth} | {p95_queue_depth:.3f} | {queue_over_capacity_count} | {max_epoch_payload_bytes} | {p95_epoch_payload_bytes:.1f} | {max_pending_anchor_count} | {p95_pending_anchor_count:.1f} | {throughput:.3f} | {avg_proof_bytes:.1f} | "
             "{signature_time_per_second:.3f} |".format(
                 **row
             )
@@ -136,6 +140,7 @@ def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig
             cpu_load=segment.cpu_load,
             input_queue_fill=segment.input_queue_fill,
             critical_every=segment.critical_every,
+            source_priority=segment.source_priority,
         )
         for segment in scenario.segments
     )
@@ -149,6 +154,7 @@ def _scenario_with_rate(scenario: ScenarioConfig, rate: float) -> ScenarioConfig
         anomaly_score_threshold=scenario.anomaly_score_threshold,
         criticality_threshold=scenario.criticality_threshold,
         epoch_buffer_budget_bytes=scenario.epoch_buffer_budget_bytes,
+        max_pending_anchors=scenario.max_pending_anchors,
     )
 
 
@@ -174,6 +180,7 @@ def _phase_payload(scenario: ScenarioConfig) -> List[dict]:
                 "rate": segment.rate,
                 "anchor_ack_latency": segment.anchor_ack_latency,
                 "input_queue_fill": segment.input_queue_fill,
+                "source_priority": segment.source_priority,
             }
         )
         current_time = end
@@ -193,6 +200,10 @@ def _commit_latency_points(result, events) -> List[dict]:
                 "avg_commit_latency": sum(latencies) / len(latencies),
                 "max_commit_latency": max(latencies),
                 "epoch_event_count": len(commit.event_ids),
+                "epoch_payload_bytes": sum(
+                    event_by_id[event_id].payload_size_bytes or len(event_by_id[event_id].payload)
+                    for event_id in commit.event_ids
+                ),
             }
         )
     return points

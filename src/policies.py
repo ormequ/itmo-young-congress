@@ -39,10 +39,12 @@ class AdaptiveEpochPolicy:
     use_cpu_load: bool = True
     use_input_queue_fill: bool = True
     use_memory_pressure: bool = True
+    use_pending_anchors: bool = True
     use_early_close: bool = True
     criticality_threshold: float = field(default_factory=lambda: load_settings().criticality_threshold)
     anomaly_score_threshold: float = field(default_factory=lambda: load_settings().anomaly_score_threshold)
     epoch_buffer_budget_bytes: float = field(default_factory=lambda: load_settings().epoch_buffer_budget_bytes)
+    max_pending_anchors: float = field(default_factory=lambda: load_settings().max_pending_anchors)
 
     def _bounds_for_rate(self, arrival_rate: float) -> tuple[int, int]:
         lower = self.min_epoch_events
@@ -75,16 +77,33 @@ class AdaptiveEpochPolicy:
             scaled_target *= max(settings.policy_input_queue_fill_min_scale, 1.0 - telemetry.input_queue_fill)
         if self.use_memory_pressure and telemetry.memory_pressure > settings.policy_memory_pressure_trigger:
             scaled_target *= max(settings.policy_memory_pressure_min_scale, 1.0 - telemetry.memory_pressure)
+        if (
+            self.use_pending_anchors
+            and math.isfinite(self.max_pending_anchors)
+            and self.max_pending_anchors > 0
+            and telemetry.pending_anchor_count > self.max_pending_anchors
+        ):
+            scaled_target *= 1.0 + min(
+                (telemetry.pending_anchor_count / self.max_pending_anchors - 1.0)
+                * settings.policy_pending_anchor_scale,
+                settings.policy_pending_anchor_cap,
+            )
 
         lower, upper = self._bounds_for_rate(base_rate)
         candidate = max(round(scaled_target), lower) if math.isinf(upper) else _clamp(round(scaled_target), lower, upper)
         delta_ratio = abs(candidate - state.current_target) / max(1, state.current_target)
         next_target = candidate if delta_ratio > self.change_threshold else state.current_target
+        effective_criticality = (
+            telemetry.effective_criticality_level
+            if telemetry.effective_criticality_level > 0.0
+            else min(1.0, telemetry.criticality_level * telemetry.source_priority)
+        )
+        priority_adjusted_anomaly_score = telemetry.anomaly_score * telemetry.source_priority
 
         should_close = (
             (self.use_early_close and telemetry.critical_event)
-            or (self.use_early_close and telemetry.anomaly_score >= self.anomaly_score_threshold)
-            or (self.use_early_close and telemetry.criticality_level >= self.criticality_threshold)
+            or (self.use_early_close and priority_adjusted_anomaly_score >= self.anomaly_score_threshold)
+            or (self.use_early_close and effective_criticality >= self.criticality_threshold)
             or (self.use_early_close and telemetry.input_queue_fill >= settings.policy_input_queue_close_threshold)
             or (self.use_early_close and self.use_memory_pressure and telemetry.memory_pressure >= 1.0)
             or (self.use_early_close and telemetry.cpu_load >= settings.policy_cpu_close_threshold)

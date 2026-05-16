@@ -23,8 +23,11 @@ class TelemetrySample:
     rolling_data_std: float = 0.0
     anomaly_score: float = 0.0
     criticality_level: float = 0.0
+    source_priority: float = 1.0
+    effective_criticality_level: float = 0.0
     epoch_payload_bytes: int = 0
     memory_pressure: float = 0.0
+    pending_anchor_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class ArrivalSegment:
     cpu_load: float = field(default_factory=lambda: load_settings().segment_cpu_load)
     input_queue_fill: float = field(default_factory=lambda: load_settings().segment_input_queue_fill)
     critical_every: int = 0
+    source_priority: float = field(default_factory=lambda: load_settings().segment_source_priority)
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,7 @@ class ScenarioConfig:
     anomaly_score_threshold: float = field(default_factory=lambda: load_settings().anomaly_score_threshold)
     criticality_threshold: float = field(default_factory=lambda: load_settings().criticality_threshold)
     epoch_buffer_budget_bytes: float = field(default_factory=lambda: load_settings().epoch_buffer_budget_bytes)
+    max_pending_anchors: float = field(default_factory=lambda: load_settings().max_pending_anchors)
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,7 @@ class Event:
     data_value: float = 0.0
     criticality_level: float = 0.0
     payload_size_bytes: int = 0
+    source_priority: float = 1.0
 
     def with_arrival(self, arrival_time: float) -> "Event":
         return Event(
@@ -90,6 +96,7 @@ class Event:
             data_value=self.data_value,
             criticality_level=self.criticality_level,
             payload_size_bytes=self.payload_size_bytes,
+            source_priority=self.source_priority,
         )
 
 
@@ -115,6 +122,8 @@ class RunMetrics:
     queue_over_capacity_count: int
     max_epoch_payload_bytes: int
     p95_epoch_payload_bytes: float
+    max_pending_anchor_count: int
+    p95_pending_anchor_count: float
     avg_proof_hashes: float
     avg_proof_bytes: float
     signature_count: int

@@ -18,6 +18,7 @@ class Settings:
     segment_anchor_ack_latency: float
     segment_cpu_load: float
     segment_input_queue_fill: float
+    segment_source_priority: float
     # Rolling-window settings for anomaly detection over telemetry and data values.
     telemetry_window_size: int
     anomaly_score_threshold: float
@@ -45,6 +46,9 @@ class Settings:
     epoch_buffer_budget_bytes: float
     policy_memory_pressure_trigger: float
     policy_memory_pressure_min_scale: float
+    max_pending_anchors: float
+    policy_pending_anchor_scale: float
+    policy_pending_anchor_cap: float
     policy_cpu_close_threshold: float
     # Generated event defaults for synthetic data value and criticality labels.
     simulator_generated_data_value: float
@@ -58,6 +62,7 @@ def load_settings() -> Settings:
         segment_anchor_ack_latency=_env_float("SEGMENT_ANCHOR_ACK_LATENCY", 1.0),
         segment_cpu_load=_env_float("SEGMENT_CPU_LOAD", 0.2),
         segment_input_queue_fill=_env_float("SEGMENT_INPUT_QUEUE_FILL", 0.1),
+        segment_source_priority=_env_float("SEGMENT_SOURCE_PRIORITY", 1.0),
         # Rolling anomaly detector defaults.
         telemetry_window_size=_env_int("TELEMETRY_WINDOW_SIZE", 5),
         anomaly_score_threshold=_env_float("ANOMALY_SCORE_THRESHOLD", 3.0),
@@ -84,6 +89,9 @@ def load_settings() -> Settings:
         epoch_buffer_budget_bytes=_env_float("EPOCH_BUFFER_BUDGET_BYTES", float("inf")),
         policy_memory_pressure_trigger=_env_float("POLICY_MEMORY_PRESSURE_TRIGGER", 0.8),
         policy_memory_pressure_min_scale=_env_float("POLICY_MEMORY_PRESSURE_MIN_SCALE", 0.25),
+        max_pending_anchors=_env_float("MAX_PENDING_ANCHORS", float("inf")),
+        policy_pending_anchor_scale=_env_float("POLICY_PENDING_ANCHOR_SCALE", 0.25),
+        policy_pending_anchor_cap=_env_float("POLICY_PENDING_ANCHOR_CAP", 0.5),
         policy_cpu_close_threshold=_env_float("POLICY_CPU_CLOSE_THRESHOLD", 0.95),
         # Synthetic event payload defaults used by the simulator.
         simulator_generated_data_value=_env_float("SIMULATOR_DATA_VALUE", 1.0),

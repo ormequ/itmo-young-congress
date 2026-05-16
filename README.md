@@ -32,11 +32,15 @@ PYTHONPATH=src python3 -m itmo_young_congress demo-gateway --config configs/crit
 - `candidate` - новый кандидатный размер эпохи.
 - `policy_change_threshold` - минимальное относительное изменение размера эпохи, при котором политика действительно перенастраивается.
 - `criticality_level` - оценка критичности текущих данных.
+- `source_priority` - приоритет источника данных, например аварийная защита или обычная телеметрия.
+- `effective_criticality_level` - итоговая критичность с учетом приоритета источника.
 - `criticality_threshold` - порог, после которого данные считаются критичными.
 - `epoch_event_count` - число событий, уже накопленных в текущей эпохе.
 - `epoch_payload_bytes` - суммарный объем payload в открытой эпохе.
 - `epoch_buffer_budget_bytes` - бюджет памяти шлюза, выделенный под буфер открытой эпохи.
 - `memory_pressure` - доля использования бюджета памяти открытой эпохой.
+- `pending_anchor_count` - число уже закрытых эпох, внешняя фиксация которых еще не подтверждена.
+- `max_pending_anchors` - допустимое число неподтвержденных внешних фиксаций.
 
 ### Фиксированная политика
 
@@ -97,6 +101,18 @@ if memory_pressure > policy_memory_pressure_trigger:
   scaled_target *= max(policy_memory_pressure_min_scale, 1 - memory_pressure)
 ```
 
+Если внешняя система фиксации не успевает подтверждать закрытые эпохи, target увеличивается:
+
+```text
+if pending_anchor_count > max_pending_anchors:
+  scaled_target *= 1 + min(
+    (pending_anchor_count / max_pending_anchors - 1) * policy_pending_anchor_scale,
+    policy_pending_anchor_cap
+  )
+```
+
+Так в модели появляется конфликт управления: рост `input_queue_fill` заставляет закрывать эпохи чаще, а рост `pending_anchor_count` показывает backpressure внешней фиксации и заставляет закрывать их реже.
+
 После этого новый target ограничивается диапазоном:
 
 ```text
@@ -122,8 +138,8 @@ next_target = candidate if delta_ratio > policy_change_threshold else current_ta
 Адаптивная политика может закрыть эпоху раньше заполнения, если выполняется хотя бы одно условие:
 
 - пришло критичное событие;
-- `anomaly_score >= anomaly_score_threshold`;
-- `criticality_level >= criticality_threshold`;
+- `anomaly_score * source_priority >= anomaly_score_threshold`;
+- `effective_criticality_level >= criticality_threshold`;
 - `input_queue_fill >= policy_input_queue_close_threshold`;
 - `memory_pressure >= 1.0`;
 - `cpu_load >= policy_cpu_close_threshold`;
@@ -155,10 +171,20 @@ score = abs(value - mean) / std
 Эпоха может закрываться досрочно, если:
 
 ```text
-anomaly_score >= anomaly_score_threshold
+anomaly_score * source_priority >= anomaly_score_threshold
 ```
 
 Если `std` почти нулевое, любое ненулевое отклонение от среднего считается сильной аномалией.
+
+## Приоритет источника
+
+Для промышленных сценариев у события может быть не только собственная критичность, но и приоритет источника:
+
+```text
+effective_criticality_level = min(1.0, criticality_level * source_priority)
+```
+
+Это позволяет отличать одинаковые значения телеметрии от разных потоков: событие от источника аварийной защиты может закрыть эпоху раньше, чем событие такой же формы от диагностического потока.
 
 ## Метрики
 
@@ -177,6 +203,8 @@ anomaly_score >= anomaly_score_threshold
 - `queue_over_capacity_count`
 - `max_epoch_payload_bytes`
 - `p95_epoch_payload_bytes`
+- `max_pending_anchor_count`
+- `p95_pending_anchor_count`
 - `avg_proof_hashes`
 - `avg_proof_bytes`
 
@@ -200,6 +228,7 @@ commit_latency = commit_time - event.arrival_time
 | `MIN_EPOCH_DURATION_SECONDS` | `0` | минимальная длительность открытой эпохи в секундах |
 | `MAX_EPOCH_DURATION_SECONDS` | `inf` | максимальная длительность открытой эпохи в секундах |
 | `EPOCH_BUFFER_BUDGET_BYTES` | `inf` | бюджет памяти под payload открытой эпохи |
+| `MAX_PENDING_ANCHORS` | `inf` | допустимое число неподтвержденных внешних фиксаций |
 | `POLICY_CHANGE_THRESHOLD` | `0.15` | минимальное относительное изменение `target` для перенастройки |
 | `POLICY_ANCHOR_ACK_TARGET` | `1.0` | нормальная задержка подтверждения записи |
 
@@ -219,10 +248,13 @@ commit_latency = commit_time - event.arrival_time
 | `POLICY_INPUT_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
 | `POLICY_MEMORY_PRESSURE_TRIGGER` | `0.8` | порог, после которого заполнение буфера эпохи уменьшает `target` |
 | `POLICY_MEMORY_PRESSURE_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высоком заполнении буфера эпохи |
+| `POLICY_PENDING_ANCHOR_SCALE` | `0.25` | сила реакции на превышение `max_pending_anchors` |
+| `POLICY_PENDING_ANCHOR_CAP` | `0.50` | максимум увеличения `target` из-за неподтвержденных фиксаций |
 | `POLICY_CPU_CLOSE_THRESHOLD` | `0.95` | жесткий порог раннего закрытия по CPU |
 | `SEGMENT_ANCHOR_ACK_LATENCY` | `1.0` | значение `anchor_ack_latency` по умолчанию для сегмента без явного поля |
 | `SEGMENT_CPU_LOAD` | `0.2` | значение `cpu_load` по умолчанию для сегмента без явного поля |
 | `SEGMENT_INPUT_QUEUE_FILL` | `0.1` | значение `input_queue_fill` по умолчанию для сегмента без явного поля |
+| `SEGMENT_SOURCE_PRIORITY` | `1.0` | приоритет источника по умолчанию для сегмента без явного поля |
 | `SIMULATOR_DATA_VALUE` | `1.0` | масштаб синтетического `data_value` |
 | `SIMULATOR_CRITICALITY_DEFAULT` | `0.1` | критичность обычного синтетического события |
 | `SIMULATOR_CRITICALITY_CRITICAL` | `1.0` | критичность синтетического критичного события |
