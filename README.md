@@ -86,14 +86,6 @@ if cpu_load > policy_cpu_load_trigger:
   )
 ```
 
-Если очередь близка к насыщению, target наоборот уменьшается:
-
-```text
-if input_queue_fill > policy_input_queue_fill_trigger:
-  input_queue_cap = base_target * max(policy_input_queue_fill_min_scale, 1 - input_queue_fill)
-  scaled_target = min(scaled_target, input_queue_cap)
-```
-
 Если объем накопленных payload приближается к бюджету памяти открытой эпохи, target тоже уменьшается:
 
 ```text
@@ -114,8 +106,8 @@ if pending_anchor_count > max_pending_anchors:
   )
 ```
 
-Так в модели появляется конфликт управления: рост `input_queue_fill` заставляет закрывать эпохи чаще, а рост `pending_anchor_count` показывает backpressure внешней фиксации и заставляет закрывать их реже.
-При этом `input_queue_fill` и `memory_pressure` применяются как верхние ограничения на target, поэтому anchor-backpressure не может отменить сжатие эпохи при заполнении входной очереди или буфера памяти.
+Так в модели появляется конфликт управления: рост `pending_anchor_count` показывает backpressure внешней фиксации и заставляет закрывать эпохи реже, а `memory_pressure` ограничивает размер открытой эпохи по памяти.
+`input_queue_fill` не используется как плавный регулятор размера эпохи, потому что уменьшение эпохи при росте очереди может увеличить частоту фиксаций и усилить локальный bottleneck. Вместо этого очередь используется как жесткий safety-сигнал раннего закрытия эпохи.
 
 После этого новый target ограничивается диапазоном:
 
@@ -258,9 +250,7 @@ commit_latency = commit_time - event.arrival_time
 | `POLICY_CPU_LOAD_TRIGGER` | `0.8` | порог, после которого CPU влияет на `target` |
 | `POLICY_CPU_LOAD_SCALE` | `0.3` | чувствительность к загрузке CPU после порога |
 | `POLICY_CPU_LOAD_CAP` | `0.10` | максимум увеличения `target` из-за CPU |
-| `POLICY_INPUT_QUEUE_FILL_TRIGGER` | `0.8` | порог, после которого очередь начинает уменьшать `target` |
-| `POLICY_INPUT_QUEUE_FILL_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высокой очереди |
-| `POLICY_INPUT_QUEUE_CLOSE_THRESHOLD` | `0.9` | жесткий порог раннего закрытия по очереди |
+| `POLICY_INPUT_QUEUE_CLOSE_THRESHOLD` | `0.95` | жесткий порог раннего закрытия по очереди |
 | `POLICY_MEMORY_PRESSURE_TRIGGER` | `0.8` | порог, после которого заполнение буфера эпохи уменьшает `target` |
 | `POLICY_MEMORY_PRESSURE_MIN_SCALE` | `0.25` | минимальный коэффициент уменьшения при высоком заполнении буфера эпохи |
 | `POLICY_PENDING_ANCHOR_SCALE` | `0.25` | сила реакции на превышение `max_pending_anchors` |
@@ -317,9 +307,11 @@ commit_latency = commit_time - event.arrival_time
 - `configs/critical-event-injection.json`
 - `configs/memory-pressure.json`
 - `configs/anchor-backpressure.json`
+- `configs/article-variable-input.json`
 
 `memory-pressure` изолирует рост `epoch_payload_bytes / memory_pressure`: задержка внешней фиксации и очередь остаются умеренными, а размер payload в сегментах увеличивается.
 `anchor-backpressure` изолирует рост `pending_anchor_count`: payload не раздувается, но `anchor_ack_latency` временно становится большим, из-за чего внешняя фиксация не успевает подтверждать закрытые эпохи.
+`article-variable-input` используется для `adaptation_timeline.png`: низкий поток сменяется ростом, burst-фазой с превышением `input_queue_close_threshold`, затем спадом.
 
 ## Графики для статьи
 
@@ -333,7 +325,7 @@ commit_latency = commit_time - event.arrival_time
 - `cost_and_stability_full.png` - расширенная версия с дополнительными cost-метриками;
 - `memory_pressure_overview.png` - показывает, что `memory_pressure` ограничивает payload открытой эпохи; payload выводится в KiB;
 - `anchor_backpressure_ablation.png` - сравнивает `Adaptive full`, `Adaptive w/o anchor BP`, `Fixed-small` и `Fixed-nominal`; здесь `BP` означает `backpressure`.
-- `combined_stress_table.md`, `combined_stress_table.csv` - таблица mean +/- std по seeds для точного численного сравнения политик в сценарии `Combined stress`.
+- `combined_stress_table.md`, `combined_stress_table.csv` - таблица mean +/- std по seeds для точного численного сравнения политик в сценарии `Combined stress`, включая частоту фиксаций и стоимость подписи root.
 - `close_reason_counts_combined_stress.md`, `close_reason_counts_combined_stress.csv` - диагностика причин закрытия эпох для `Adaptive` в сценарии `Combined stress`.
 - `anchor_backpressure_overview.png` и `anchor_backpressure_full.png` сохраняются как вспомогательные агрегированные графики, но для статьи лучше использовать timeline-график реакции ниже.
 - старые `avg_commit_latency.png`, `max_commit_latency.png`, `commit_frequency.png`, `p95_queue_depth.png`, `avg_proof_bytes.png`, `tradeoff.png` также сохраняются.
@@ -342,7 +334,7 @@ commit_latency = commit_time - event.arrival_time
 
 - `target_timeline.png`;
 - `telemetry_timeline.png`;
-- `adaptation_timeline.png` с `arrival_rate`, `anchor_ack_latency`, `next_target`, `input_queue_fill`, `memory_pressure`, `pending_anchor_count` и маркерами `should_close`.
+- `adaptation_timeline.png` - график общей адаптации под переменный входной поток в сценарии `article-variable-input`: `Input rate`, `Adaptive target epoch size`, `Fixed-nominal target`, обычные закрытия `Target reached`, досрочные закрытия `Early close: input queue pressure`, `Input queue fill` и `Memory pressure`.
 - `backpressure_response_timeline.png` - основной график для anchor backpressure: показывает, как рост `anchor_ack_latency` и `pending_anchor_count` приводит к увеличению adaptive target epoch size и снижению частоты новых root commits.
 
 Для `combined-stress` возможно, что adaptive policy показывает больший `pending_anchor_count`, чем фиксированные политики.
@@ -352,7 +344,7 @@ commit_latency = commit_time - event.arrival_time
 ```text
 Under combined stress, Adaptive may close epochs more frequently due to hard-close and cap constraints. This preserves commit latency and prevents queue over-capacity, but can increase pending anchors under external anchor degradation.
 
-The combined-stress table summarizes the main trade-off: commit latency, commit cost, memory footprint, queue pressure, and data loss. Detailed pending-anchor behavior is shown separately in the backpressure timeline and diagnostics.
+The combined-stress table summarizes the main trade-off: commit latency, commit frequency, signature cost, memory footprint, queue pressure, and data loss. Detailed pending-anchor behavior is shown separately in the backpressure timeline and diagnostics.
 
 Adaptive full reduces pending anchors and commit frequency compared with Adaptive w/o anchor BP, at the cost of moderately higher commit latency.
 ```
@@ -397,13 +389,13 @@ python3 scripts/plot_results.py stress \
   --output-dir artifacts/article/plots
 
 PYTHONPATH=src python3 -m itmo_young_congress demo-stress-response \
-  --config configs/combined-stress.json \
-  --policies adaptive,fixed-nominal,fixed-small \
+  --config configs/article-variable-input.json \
+  --policies adaptive,fixed-nominal \
   --seed 1 \
-  --output artifacts/article/combined_trace.json
+  --output artifacts/article/adaptation_trace.json
 
 python3 scripts/plot_results.py timeline \
-  --summary artifacts/article/combined_trace.json \
+  --summary artifacts/article/adaptation_trace.json \
   --output-dir artifacts/article/plots
 
 PYTHONPATH=src python3 -m itmo_young_congress demo-stress-response \

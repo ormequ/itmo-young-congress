@@ -84,9 +84,6 @@ class AdaptiveEpochPolicy:
                 * settings.policy_pending_anchor_scale,
                 settings.policy_pending_anchor_cap,
             )
-        if self.use_input_queue_fill and telemetry.input_queue_fill > settings.policy_input_queue_fill_trigger:
-            input_queue_cap = base_target * max(settings.policy_input_queue_fill_min_scale, 1.0 - telemetry.input_queue_fill)
-            scaled_target = min(scaled_target, input_queue_cap)
         if self.use_memory_pressure and telemetry.memory_pressure > settings.policy_memory_pressure_trigger:
             memory_cap = base_target * max(settings.policy_memory_pressure_min_scale, 1.0 - telemetry.memory_pressure)
             scaled_target = min(scaled_target, memory_cap)

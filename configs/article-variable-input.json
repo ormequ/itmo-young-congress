@@ -1,0 +1,42 @@
+{
+  "name": "article-variable-input",
+  "duration": 16.0,
+  "queue_capacity": 24,
+  "target_commit_latency": 2.0,
+  "anomaly_score_threshold": 10000000.0,
+  "epoch_buffer_budget_bytes": 16384,
+  "segments": [
+    {
+      "duration": 4.0,
+      "rate": 5.0,
+      "anchor_ack_latency": 1.0,
+      "cpu_load": 0.25,
+      "input_queue_fill": 0.2,
+      "payload_size_bytes": 128
+    },
+    {
+      "duration": 4.0,
+      "rate": 10.0,
+      "anchor_ack_latency": 1.0,
+      "cpu_load": 0.35,
+      "input_queue_fill": 0.45,
+      "payload_size_bytes": 128
+    },
+    {
+      "duration": 4.0,
+      "rate": 18.0,
+      "anchor_ack_latency": 1.0,
+      "cpu_load": 0.55,
+      "input_queue_fill": 0.7,
+      "payload_size_bytes": 128
+    },
+    {
+      "duration": 4.0,
+      "rate": 7.0,
+      "anchor_ack_latency": 1.0,
+      "cpu_load": 0.3,
+      "input_queue_fill": 0.3,
+      "payload_size_bytes": 128
+    }
+  ]
+}

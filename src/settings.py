@@ -41,9 +41,7 @@ class Settings:
     policy_cpu_load_trigger: float
     policy_cpu_load_scale: float
     policy_cpu_load_cap: float
-    # Queue-based shrinking and hard early-close thresholds.
-    policy_input_queue_fill_trigger: float
-    policy_input_queue_fill_min_scale: float
+    # Queue-based hard early-close threshold.
     policy_input_queue_close_threshold: float
     epoch_buffer_budget_bytes: float
     policy_memory_pressure_trigger: float
@@ -87,9 +85,7 @@ def load_settings() -> Settings:
         policy_cpu_load_scale=_env_float("POLICY_CPU_LOAD_SCALE", 0.3),
         policy_cpu_load_cap=_env_float("POLICY_CPU_LOAD_CAP", 0.1),
         # Queue and anomaly-triggered early-close thresholds.
-        policy_input_queue_fill_trigger=_env_float("POLICY_INPUT_QUEUE_FILL_TRIGGER", 0.8),
-        policy_input_queue_fill_min_scale=_env_float("POLICY_INPUT_QUEUE_FILL_MIN_SCALE", 0.25),
-        policy_input_queue_close_threshold=_env_float("POLICY_INPUT_QUEUE_CLOSE_THRESHOLD", 0.9),
+        policy_input_queue_close_threshold=_env_float("POLICY_INPUT_QUEUE_CLOSE_THRESHOLD", 0.95),
         epoch_buffer_budget_bytes=_env_float("EPOCH_BUFFER_BUDGET_BYTES", float("inf")),
         policy_memory_pressure_trigger=_env_float("POLICY_MEMORY_PRESSURE_TRIGGER", 0.8),
         policy_memory_pressure_min_scale=_env_float("POLICY_MEMORY_PRESSURE_MIN_SCALE", 0.25),

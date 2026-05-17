@@ -1,4 +1,6 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from domain import EpochState, TelemetrySample
 from policies import AdaptiveEpochPolicy, FixedEpochPolicy
@@ -41,7 +43,8 @@ class AdaptivePolicyTests(unittest.TestCase):
         self.assertEqual(decision.next_target, 16)
         self.assertFalse(decision.should_close)
 
-    def test_reduces_target_when_queue_is_near_capacity(self) -> None:
+    @patch.dict(os.environ, {}, clear=True)
+    def test_queue_fill_does_not_smoothly_cap_target_but_can_close_epoch(self) -> None:
         policy = AdaptiveEpochPolicy(
             target_commit_latency=2.0,
             min_epoch_events=2,
@@ -52,11 +55,14 @@ class AdaptivePolicyTests(unittest.TestCase):
             anchor_ack_target=1.0,
         )
         state = EpochState(epoch_event_count=1, current_target=10)
-        telemetry = TelemetrySample(arrival_rate=8.0, input_queue_fill=0.95)
 
-        decision = policy.evaluate(state, telemetry)
+        below_threshold = policy.evaluate(state, TelemetrySample(arrival_rate=8.0, input_queue_fill=0.92))
+        at_threshold = policy.evaluate(state, TelemetrySample(arrival_rate=8.0, input_queue_fill=0.95))
 
-        self.assertLess(decision.next_target, 16)
+        self.assertEqual(below_threshold.next_target, 16)
+        self.assertFalse(below_threshold.should_close)
+        self.assertEqual(at_threshold.next_target, 16)
+        self.assertTrue(at_threshold.should_close)
 
     def test_memory_pressure_reduces_target_and_closes_at_budget(self) -> None:
         policy = AdaptiveEpochPolicy(

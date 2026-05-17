@@ -63,6 +63,7 @@ COST_OVERVIEW_PANELS = [
 COMBINED_STRESS_TABLE_COLUMNS = [
     ("p95_commit_latency", "P95 latency, s", 1.0),
     ("commit_frequency", "Commit freq., 1/s", 1.0),
+    ("signature_time_per_second", "Signature time, s/s", 1.0),
     ("p95_epoch_payload_bytes", "P95 payload, KiB", 1 / 1024),
     ("p95_queue_depth", "P95 queue depth", 1.0),
     ("queue_over_capacity_count", "Queue over-capacity", 1.0),
@@ -748,6 +749,23 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     anchor_ack_latency = [point["anchor_ack_latency"] for point in points]
     close_times = [point["time"] for point in points if point["should_close"]]
     close_targets = [point["next_target"] for point in points if point["should_close"]]
+    target_close_points = [
+        point
+        for point in points
+        if point["should_close"]
+        and "target_reached" in point.get("close_reasons", [])
+        and "input_queue_pressure" not in point.get("close_reasons", [])
+    ]
+    queue_close_points = [
+        point for point in points if point["should_close"] and "input_queue_pressure" in point.get("close_reasons", [])
+    ]
+    other_close_points = [
+        point
+        for point in points
+        if point["should_close"]
+        and "target_reached" not in point.get("close_reasons", [])
+        and "input_queue_pressure" not in point.get("close_reasons", [])
+    ]
 
     fig, ax = plt.subplots(figsize=(11, 5.5))
     ax.step(times, next_targets, where="post", color=POLICY_COLORS["adaptive"], linewidth=2.5, label="Target epoch size")
@@ -779,64 +797,80 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     fig.savefig(output_dir / "telemetry_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
 
-    fig, axes = plt.subplots(4, 1, figsize=(13, 10.5), sharex=True)
-    axes[0].step(times, arrival_rates, where="post", color="#2ca02c", linewidth=2.3, label="Input rate")
-    ack_axis = axes[0].twinx()
-    ack_axis.step(times, anchor_ack_latency, where="post", color="#9467bd", linewidth=2.0, label="Anchor ack")
-    axes[0].set_ylabel("evt/s")
-    ack_axis.set_ylabel("Anchor ack latency, s")
-    axes[0].legend(
-        handles=[
-            Line2D([0], [0], color="#2ca02c", lw=2.3, label="Input rate"),
-            Line2D([0], [0], color="#9467bd", lw=2.0, label="Anchor ack latency"),
-        ],
-        frameon=False,
-        loc="upper left",
-    )
+    fixed_nominal_target = _fixed_nominal_target(comparison_points, fallback=next_targets[0] if next_targets else 0.0)
+    if scenario_name in {"article-variable-input", "burst"}:
+        fig, axes = plt.subplots(3, 1, figsize=(12.5, 8.4), sharex=True)
+        fig.suptitle("Adaptive policy timeline under variable input workload", y=0.995)
 
-    axes[1].step(
-        times,
-        next_targets,
-        where="post",
-        color=POLICY_COLORS["adaptive"],
-        linewidth=2.5,
-        label="Adaptive target",
-    )
-    if comparison_points:
+        axes[0].step(times, arrival_rates, where="post", color="#2ca02c", linewidth=2.4, label="Input rate")
+        axes[0].set_ylabel("Input rate, events/s")
+        axes[0].legend(frameon=False, loc="upper left")
+
         axes[1].step(
-            [point["time"] for point in comparison_points],
-            [point["next_target"] for point in comparison_points],
+            times,
+            next_targets,
             where="post",
-            color=POLICY_COLORS.get(comparison_policy, "#666666"),
-            linewidth=2.0,
-            label=POLICY_LABELS.get(comparison_policy, comparison_policy),
+            color=POLICY_COLORS["adaptive"],
+            linewidth=2.5,
+            label="Adaptive target epoch size",
         )
-    if close_times:
-        axes[1].scatter(close_times, close_targets, color="#d62728", s=52, zorder=3, label="Epoch close")
-    axes[1].legend(frameon=False, loc="upper left")
-    axes[1].set_ylabel("Target epoch size, events")
+        if fixed_nominal_target:
+            axes[1].axhline(
+                fixed_nominal_target,
+                color=POLICY_COLORS["fixed-nominal"],
+                linestyle="--",
+                linewidth=1.4,
+                label="Fixed-nominal target",
+            )
+        if target_close_points:
+            axes[1].scatter(
+                [point["time"] for point in target_close_points],
+                [point["next_target"] for point in target_close_points],
+                marker="o",
+                facecolors="white",
+                edgecolors=POLICY_COLORS["adaptive"],
+                linewidths=1.8,
+                s=56,
+                zorder=3,
+                label="Target reached",
+            )
+        if queue_close_points:
+            axes[1].scatter(
+                [point["time"] for point in queue_close_points],
+                [point["next_target"] for point in queue_close_points],
+                marker="^",
+                color="#d62728",
+                s=68,
+                zorder=4,
+                label="Early close: input queue pressure",
+            )
+        if other_close_points:
+            axes[1].scatter(
+                [point["time"] for point in other_close_points],
+                [point["next_target"] for point in other_close_points],
+                marker="x",
+                color="#777777",
+                s=48,
+                zorder=3,
+                label="Other early close",
+            )
+        axes[1].legend(frameon=False, loc="upper left")
+        axes[1].set_ylabel("Target epoch size, events")
 
-    axes[2].step(times, input_queue_fill, where="post", color="#ff7f0e", linewidth=2.2, label="Input queue fill")
-    axes[2].step(times, memory_pressure, where="post", color="#8c564b", linewidth=2.2, label="Memory pressure")
-    axes[2].axhline(0.9, color="#555555", linestyle="--", linewidth=1.2, label="Queue close threshold")
-    axes[2].axhline(1.0, color="#d62728", linestyle="--", linewidth=1.2, label="Memory hard-close threshold")
-    axes[2].set_ylabel("Constraints")
-    axes[2].legend(frameon=False, ncol=4, loc="upper left")
+        axes[2].step(times, input_queue_fill, where="post", color="#ff7f0e", linewidth=2.2, label="Input queue fill")
+        axes[2].step(times, memory_pressure, where="post", color="#8c564b", linewidth=2.2, label="Memory pressure")
+        axes[2].axhline(0.95, color="#555555", linestyle="--", linewidth=1.2, label="Queue close threshold")
+        axes[2].axhline(1.0, color="#d62728", linestyle="--", linewidth=1.2, label="Memory hard-close threshold")
+        axes[2].set_ylabel("Local constraints")
+        axes[2].set_xlabel("Time, s")
+        axes[2].legend(frameon=False, ncol=2, loc="upper left")
 
-    axes[3].step(times, pending_anchor_count, where="post", color="#17becf", linewidth=2.3, label="Pending anchor count")
-    finite_anchor_limits = [value for value in max_pending_anchors if value != float("inf")]
-    if finite_anchor_limits:
-        axes[3].axhline(max(finite_anchor_limits), color="#555555", linestyle="--", linewidth=1.2, label="Max pending anchors")
-    axes[3].set_ylabel("Pending anchors")
-    axes[3].set_xlabel("Time, s")
-    axes[3].legend(frameon=False, loc="upper left")
-
-    for ax in axes:
-        ax.grid(alpha=0.2, linestyle="--")
-        ax.set_axisbelow(True)
-    fig.tight_layout()
-    fig.savefig(output_dir / "adaptation_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
-    plt.close(fig)
+        for ax in axes:
+            ax.grid(alpha=0.2, linestyle="--")
+            ax.set_axisbelow(True)
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        fig.savefig(output_dir / "adaptation_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
+        plt.close(fig)
     build_close_reason_counts(trace_path, output_dir)
 
     if scenario_name not in {"anchor-backpressure", "storage-degradation"}:
@@ -847,10 +881,7 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
         phase_targets = [phase.get("anchor_ack_target") for phase in payload["phases"] if phase.get("anchor_ack_target")]
         if phase_targets:
             anchor_ack_target = phase_targets[0]
-    fixed_nominal_target = _fixed_nominal_target(comparison_points, fallback=next_targets[0] if next_targets else 0.0)
-    commit_frequency = _commit_frequency_series(points)
-
-    fig, axes = plt.subplots(4, 1, figsize=(12.5, 10.2), sharex=True)
+    fig, axes = plt.subplots(3, 1, figsize=(12.5, 8.2), sharex=True)
     axes[0].step(times, anchor_ack_latency, where="post", color="#9467bd", linewidth=2.2, label="Anchor ack latency")
     axes[0].axhline(anchor_ack_target, color="#555555", linestyle="--", linewidth=1.2, label="Anchor ack target")
     axes[0].set_ylabel("Anchor ack latency, s")
@@ -868,21 +899,20 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
         axes[2].axhline(fixed_nominal_target, color=POLICY_COLORS["fixed-nominal"], linestyle="--", linewidth=1.4, label="Fixed-nominal target")
     axes[2].set_ylabel("Target epoch size")
     axes[2].legend(frameon=False, loc="upper left")
+    axes[2].set_xlabel("Time, s")
 
-    axes[3].step(times, commit_frequency, where="post", color="#7f7f7f", linewidth=2.2, label="Local commit frequency")
     if close_times:
-        for index, close_time in enumerate(close_times):
-            axes[3].axvline(
-                close_time,
-                color="#d62728",
-                linestyle="--",
-                linewidth=0.9,
-                alpha=0.45,
-                label="Root commit" if index == 0 else None,
-            )
-    axes[3].set_ylabel("Local commit frequency, 1/s")
-    axes[3].set_xlabel("Time, s")
-    axes[3].legend(frameon=False, loc="upper left")
+        for ax in axes:
+            for index, close_time in enumerate(close_times):
+                ax.axvline(
+                    close_time,
+                    color="#d62728",
+                    linestyle="--",
+                    linewidth=0.9,
+                    alpha=0.4,
+                    label="Root commit" if ax is axes[0] and index == 0 else None,
+                )
+        axes[0].legend(frameon=False, loc="upper left")
 
     for ax in axes:
         ax.grid(alpha=0.2, linestyle="--")
