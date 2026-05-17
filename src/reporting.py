@@ -300,7 +300,7 @@ def run_stress_response(
     policies: Sequence[str],
     seed: int,
 ) -> Dict[str, object]:
-    available = _stress_policies(scenario)
+    available = make_policies(scenario)
     events = generate_events(scenario, seed)
     traces: Dict[str, List[dict]] = {}
     commit_latency_points: Dict[str, List[dict]] = {}

@@ -81,7 +81,7 @@ class StressTests(unittest.TestCase):
             criticality_threshold=0.9,
             segments=(
                 ArrivalSegment(duration=2.0, rate=4.0, anchor_ack_latency=1.0, input_queue_fill=0.2),
-                ArrivalSegment(duration=2.0, rate=8.0, anchor_ack_latency=2.0, input_queue_fill=0.8),
+                ArrivalSegment(duration=2.0, rate=8.0, anchor_ack_latency=2.0, input_queue_fill=0.95),
                 ArrivalSegment(duration=2.0, rate=5.0, anchor_ack_latency=1.2, input_queue_fill=0.3),
             ),
         )
@@ -101,7 +101,7 @@ class StressTests(unittest.TestCase):
         self.assertIn("max_commit_latency", payload["commit_latency_points"]["adaptive"][0])
         adaptive_closes = [point for point in payload["policies"]["adaptive"] if point["should_close"]]
         self.assertTrue(adaptive_closes)
-        self.assertTrue(all(point["epoch_event_count"] >= point["next_target"] for point in adaptive_closes))
+        self.assertTrue(any("input_queue_pressure" in point["close_reasons"] for point in adaptive_closes))
 
     def test_stress_capacity_returns_curve_points_for_all_policies(self) -> None:
         scenario = ScenarioConfig(

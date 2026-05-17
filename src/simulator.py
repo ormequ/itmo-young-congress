@@ -97,6 +97,31 @@ def _policy_name(policy: object) -> str:
     return name.replace("EpochPolicy", "").replace("Policy", "").lower()
 
 
+def _close_reasons(policy: object, state: EpochState, telemetry: TelemetrySample, max_epoch_duration_reached: bool) -> list[str]:
+    settings = load_settings()
+    reasons: List[str] = []
+    if state.epoch_event_count >= state.current_target:
+        reasons.append("target_reached")
+    max_epoch_events = getattr(policy, "max_epoch_events", float("inf"))
+    if max_epoch_events < float("inf") and state.epoch_event_count >= max_epoch_events:
+        reasons.append("max_epoch_events")
+    if max_epoch_duration_reached:
+        reasons.append("max_epoch_duration")
+    if getattr(policy, "use_memory_pressure", False) and telemetry.memory_pressure >= 1.0:
+        reasons.append("memory_pressure")
+    if telemetry.input_queue_fill >= settings.policy_input_queue_close_threshold:
+        reasons.append("input_queue_pressure")
+    max_pending_anchors = getattr(policy, "max_pending_anchors", float("inf"))
+    if max_pending_anchors < float("inf") and telemetry.pending_anchor_count > max_pending_anchors:
+        reasons.append("anchor_backpressure")
+    if telemetry.critical_event:
+        reasons.append("critical_event")
+    source_priority = clamp_source_priority(telemetry.source_priority)
+    if telemetry.anomaly_score * source_priority >= getattr(policy, "anomaly_score_threshold", settings.anomaly_score_threshold):
+        reasons.append("anomaly_score")
+    return reasons
+
+
 def run_simulation(
     scenario: ScenarioConfig,
     policy: object,
@@ -257,6 +282,16 @@ def _run_simulation_internal(
             epoch_payload_bytes=epoch_payload_bytes,
         )
         decision = policy.evaluate(state, telemetry)
+        close_reasons = _close_reasons(
+            policy,
+            EpochState(
+                epoch_event_count=len(epoch_events),
+                current_target=decision.next_target,
+                epoch_payload_bytes=epoch_payload_bytes,
+            ),
+            telemetry,
+            max_epoch_duration_reached,
+        )
         if collect_trace:
             trace.append(
                 {
@@ -278,6 +313,7 @@ def _run_simulation_internal(
                     "effective_criticality_level": effective_criticality_level,
                     "max_epoch_duration_reached": max_epoch_duration_reached,
                     "should_close": decision.should_close or max_epoch_duration_reached,
+                    "close_reasons": close_reasons if decision.should_close or max_epoch_duration_reached else [],
                 }
             )
         current_target = decision.next_target

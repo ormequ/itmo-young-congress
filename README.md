@@ -334,6 +334,7 @@ commit_latency = commit_time - event.arrival_time
 - `memory_pressure_overview.png` - показывает, что `memory_pressure` ограничивает payload открытой эпохи; payload выводится в KiB;
 - `anchor_backpressure_ablation.png` - сравнивает `Adaptive full`, `Adaptive w/o anchor BP`, `Fixed-small` и `Fixed-nominal`; здесь `BP` означает `backpressure`.
 - `combined_stress_table.md`, `combined_stress_table.csv` - таблица mean +/- std по seeds для точного численного сравнения политик в сценарии `Combined stress`.
+- `close_reason_counts_combined_stress.md`, `close_reason_counts_combined_stress.csv` - диагностика причин закрытия эпох для `Adaptive` в сценарии `Combined stress`.
 - `anchor_backpressure_overview.png` и `anchor_backpressure_full.png` сохраняются как вспомогательные агрегированные графики, но для статьи лучше использовать timeline-график реакции ниже.
 - старые `avg_commit_latency.png`, `max_commit_latency.png`, `commit_frequency.png`, `p95_queue_depth.png`, `avg_proof_bytes.png`, `tradeoff.png` также сохраняются.
 
@@ -349,7 +350,9 @@ commit_latency = commit_time - event.arrival_time
 В статье это можно формулировать так:
 
 ```text
-Under combined stress, adaptive policy may produce more pending anchors because hard-close and cap constraints preserve freshness under resource pressure. This illustrates the trade-off between integrity freshness and anchor backpressure.
+Under combined stress, Adaptive may close epochs more frequently due to hard-close and cap constraints. This preserves commit latency and prevents queue over-capacity, but can increase pending anchors under external anchor degradation.
+
+The combined-stress table summarizes the main trade-off: commit latency, commit cost, memory footprint, queue pressure, and data loss. Detailed pending-anchor behavior is shown separately in the backpressure timeline and diagnostics.
 
 Adaptive full reduces pending anchors and commit frequency compared with Adaptive w/o anchor BP, at the cost of moderately higher commit latency.
 ```

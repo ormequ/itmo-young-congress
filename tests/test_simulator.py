@@ -49,6 +49,46 @@ class SimulatorTests(unittest.TestCase):
         self.assertGreaterEqual(len(trace), 2)
         self.assertTrue(any(point["should_close"] for point in trace))
         self.assertGreater(len({point["next_target"] for point in trace}), 1)
+        close_points = [point for point in trace if point["should_close"]]
+        self.assertTrue(any("target_reached" in point["close_reasons"] for point in close_points))
+
+    def test_trace_records_close_reason_for_memory_pressure(self) -> None:
+        scenario = ScenarioConfig(
+            name="memory",
+            duration=3.0,
+            queue_capacity=10,
+            target_commit_latency=10.0,
+            epoch_buffer_budget_bytes=100,
+            segments=(ArrivalSegment(duration=3.0, rate=1.0, payload_size_bytes=120),),
+        )
+        adaptive = AdaptiveEpochPolicy(
+            target_commit_latency=10.0,
+            min_epoch_events=1,
+            max_epoch_events=float("inf"),
+            min_epoch_duration_seconds=0.0,
+            max_epoch_duration_seconds=float("inf"),
+            change_threshold=0.0,
+            anchor_ack_target=1.0,
+            epoch_buffer_budget_bytes=100,
+        )
+        events = [
+            Event(
+                event_id=1,
+                arrival_time=0.1,
+                payload=b"x" * 120,
+                payload_size_bytes=120,
+                anchor_ack_latency=1.0,
+                cpu_load=0.1,
+                input_queue_fill=0.1,
+                critical=False,
+                arrival_rate=1.0,
+            )
+        ]
+
+        trace = run_simulation_trace(scenario, adaptive, events=events)
+
+        self.assertTrue(trace[0]["should_close"])
+        self.assertIn("memory_pressure", trace[0]["close_reasons"])
 
     def test_fixed_policy_uses_anchor_ack_latency_as_commit_latency(self) -> None:
         scenario = ScenarioConfig(

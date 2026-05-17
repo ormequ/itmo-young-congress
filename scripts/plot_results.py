@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import statistics
+import sys
 import tempfile
 
 _cache_dir = Path(tempfile.gettempdir()) / "matplotlib-cache"
@@ -60,13 +61,21 @@ COST_OVERVIEW_PANELS = [
     ("queue_over_capacity_count", "Queue over-capacity count"),
 ]
 COMBINED_STRESS_TABLE_COLUMNS = [
-    ("avg_commit_latency", "Avg latency, s", 1.0),
     ("p95_commit_latency", "P95 latency, s", 1.0),
-    ("max_commit_latency", "Max latency, s", 1.0),
     ("commit_frequency", "Commit freq., 1/s", 1.0),
     ("p95_epoch_payload_bytes", "P95 payload, KiB", 1 / 1024),
-    ("p95_pending_anchor_count", "P95 pending anchors", 1.0),
+    ("p95_queue_depth", "P95 queue depth", 1.0),
     ("queue_over_capacity_count", "Queue over-capacity", 1.0),
+]
+CLOSE_REASON_ORDER = [
+    "target_reached",
+    "max_epoch_duration",
+    "max_epoch_events",
+    "memory_pressure",
+    "input_queue_pressure",
+    "anchor_backpressure",
+    "critical_event",
+    "anomaly_score",
 ]
 
 
@@ -211,6 +220,12 @@ def _format_mean_std(values: list[float], scale: float = 1.0) -> str:
     scaled = [value * scale for value in values]
     mean, std = _mean_std(scaled)
     return f"{mean:.2f} +/- {std:.2f}"
+
+
+def _warn_missing_metrics(rows: list[dict], metric_keys: list[str], context: str) -> None:
+    missing = sorted({metric_key for row in rows for metric_key in metric_keys if metric_key not in row})
+    if missing:
+        print(f"warning: missing metrics in {context}: {', '.join(missing)}", file=sys.stderr)
 
 
 def _step_series(points: list[dict], metric_key: str) -> tuple[list[float], list[float]]:
@@ -442,6 +457,9 @@ def build_combined_stress_table(summary_path: Path, output_dir: Path) -> None:
     for row in scenario_rows:
         grouped[row["policy"]].append(row)
 
+    metric_keys = [metric_key for metric_key, _, _ in COMBINED_STRESS_TABLE_COLUMNS]
+    _warn_missing_metrics(scenario_rows, metric_keys, "combined-stress table")
+
     headers = ["Policy"] + [label for _, label, _ in COMBINED_STRESS_TABLE_COLUMNS]
     table_rows: list[list[str]] = []
     for policy in POLICY_ORDER:
@@ -454,8 +472,10 @@ def build_combined_stress_table(summary_path: Path, output_dir: Path) -> None:
             table_row.append(_format_mean_std(values, scale))
         table_rows.append(table_row)
 
+    seed_count = len({row.get("seed") for row in scenario_rows if row.get("seed") is not None})
+    seed_label = f"{seed_count} seeds" if seed_count else "available seeds"
     md_lines = [
-        "Combined stress results, mean +/- std over available seeds.",
+        f"Combined stress results, mean +/- std over {seed_label}.",
         "",
         "| " + " | ".join(headers) + " |",
         "| " + " | ".join(["---"] + ["---:"] * (len(headers) - 1)) + " |",
@@ -468,6 +488,50 @@ def build_combined_stress_table(summary_path: Path, output_dir: Path) -> None:
         writer = csv.writer(handle)
         writer.writerow(headers)
         writer.writerows(table_rows)
+
+
+def build_close_reason_counts(trace_path: Path, output_dir: Path) -> None:
+    payload = json.loads(trace_path.read_text(encoding="utf-8"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if payload.get("scenario") != "combined-stress":
+        return
+
+    if "points" in payload:
+        points = payload["points"]
+    else:
+        points = payload.get("policies", {}).get("adaptive", [])
+
+    counts = {reason: 0 for reason in CLOSE_REASON_ORDER}
+    for point in points:
+        if not point.get("should_close"):
+            continue
+        reasons = point.get("close_reasons") or (["target_reached"] if point.get("should_close") else [])
+        for reason in reasons:
+            counts.setdefault(reason, 0)
+            counts[reason] += 1
+
+    ordered_items = [(reason, counts.get(reason, 0)) for reason in CLOSE_REASON_ORDER]
+    extra_items = sorted((reason, count) for reason, count in counts.items() if reason not in CLOSE_REASON_ORDER)
+    rows = ordered_items + extra_items
+
+    md_lines = [
+        "Adaptive close reason counts for Combined stress.",
+        "",
+        "| Close reason | Count |",
+        "| --- | ---: |",
+    ]
+    for reason, count in rows:
+        md_lines.append(f"| {reason} | {count} |")
+    (output_dir / "close_reason_counts_combined_stress.md").write_text(
+        "\n".join(md_lines) + "\n",
+        encoding="utf-8",
+    )
+
+    with (output_dir / "close_reason_counts_combined_stress.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["Close reason", "Count"])
+        writer.writerows(rows)
+
 
 def _plot_tradeoff(rows: list[dict], output_path: Path) -> None:
     _apply_presentation_style()
@@ -773,6 +837,7 @@ def build_timeline_plots(trace_path: Path, output_dir: Path) -> None:
     fig.tight_layout()
     fig.savefig(output_dir / "adaptation_timeline.png", dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
+    build_close_reason_counts(trace_path, output_dir)
 
     if scenario_name not in {"anchor-backpressure", "storage-degradation"}:
         return

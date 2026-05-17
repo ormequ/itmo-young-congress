@@ -243,6 +243,7 @@ class PlotResultsTests(unittest.TestCase):
                         "commit_frequency": float(seed + 3),
                         "p95_epoch_payload_bytes": float(1024 * seed),
                         "p95_pending_anchor_count": float(seed + 4),
+                        "p95_queue_depth": float(seed + 5),
                         "queue_over_capacity_count": seed,
                     }
                 )
@@ -261,6 +262,40 @@ class PlotResultsTests(unittest.TestCase):
             markdown = (output_dir / "combined_stress_table.md").read_text(encoding="utf-8")
             self.assertIn("mean +/- std", markdown)
             self.assertIn("P95 payload, KiB", markdown)
+            self.assertIn("P95 queue depth", markdown)
+            self.assertNotIn("Avg latency", markdown)
+            self.assertNotIn("Max latency", markdown)
+            self.assertNotIn("P95 pending anchors", markdown)
+
+    def test_build_close_reason_counts_writes_markdown_and_csv(self) -> None:
+        plot_results = _load_plot_module()
+        trace = {
+            "scenario": "combined-stress",
+            "policies": {
+                "adaptive": [
+                    {"should_close": True, "close_reasons": ["target_reached", "memory_pressure"]},
+                    {"should_close": True, "close_reasons": ["input_queue_pressure"]},
+                    {"should_close": False, "close_reasons": []},
+                ],
+                "fixed-nominal": [
+                    {"should_close": True, "close_reasons": ["target_reached"]},
+                ],
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            trace_path = tmp / "combined_trace.json"
+            trace_path.write_text(json.dumps(trace), encoding="utf-8")
+            output_dir = tmp / "plots"
+
+            plot_results.build_close_reason_counts(trace_path, output_dir)
+
+            markdown = (output_dir / "close_reason_counts_combined_stress.md").read_text(encoding="utf-8")
+            self.assertTrue((output_dir / "close_reason_counts_combined_stress.csv").exists())
+            self.assertIn("memory_pressure", markdown)
+            self.assertIn("input_queue_pressure", markdown)
+            self.assertIn("| target_reached | 1 |", markdown)
 
     def test_aggregate_batch_rows_includes_article_metrics(self) -> None:
         plot_results = _load_plot_module()
